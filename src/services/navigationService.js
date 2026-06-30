@@ -14,7 +14,7 @@ export const navigationService = {
       end_lon: params.endLon,
       vehicle_type: params.vehicleType || 'car',
       k: params.k || 3,
-      place: params.place || 'Gujrat, Punjab, Pakistan',
+      place: params.place || 'New Delhi, India',
       event_id: params.eventId || null,
     });
     return res.data;
@@ -30,7 +30,7 @@ export const navigationService = {
       end_lat: params.endLat,
       end_lon: params.endLon,
       vehicle_type: params.vehicleType || 'car',
-      place: params.place || 'Gujrat, Punjab, Pakistan',
+      place: params.place || 'New Delhi, India',
       event_id: params.eventId || null,
     });
     return res.data;

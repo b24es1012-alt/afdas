@@ -18,7 +18,7 @@ export default function SearchBox({ placeholder = 'Search location...', onSelect
       setIsSearching(true);
       try {
         // Use Nominatim via backend or directly
-        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}, Gujrat, Pakistan&format=json&limit=5`;
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}, Delhi, India&format=json&limit=5`;
         const res = await fetch(url, {
           headers: { 'User-Agent': 'AFDAS-Frontend/1.0' },
         });

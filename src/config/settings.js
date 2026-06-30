@@ -1,6 +1,6 @@
 // Application-wide settings
 const settings = {
-  // Map defaults (Gujrat, Punjab, Pakistan)
+  // Map defaults (New Delhi, India)
   map: {
     center: [
       parseFloat(import.meta.env.VITE_MAP_CENTER_LAT) || 32.574,
@@ -37,7 +37,7 @@ const settings = {
     defaultK: 3,
     maxK: 5,
     defaultVehicle: 'car',
-    defaultPlace: 'Gujrat, Punjab, Pakistan',
+    defaultPlace: 'New Delhi, India',
   },
 
   // Flood severity colors
