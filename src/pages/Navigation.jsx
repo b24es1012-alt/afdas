@@ -293,12 +293,31 @@ export default function Navigation() {
       </div>
 
       {/* AI Assistant Panel */}
-      <AIChatPanel gpsCenter={gpsCenter} />
+      <AIChatPanel gpsCenter={gpsCenter} onRouteCalculated={(aiRoutes) => {
+        // When AI calculates routes, display them on the map
+        if (aiRoutes && aiRoutes.length > 0) {
+          setRoutes(aiRoutes);
+          setSelectedRouteIndex(0);
+          // Set origin/destination markers from the first/last coordinates of the best route
+          const bestRoute = aiRoutes[0];
+          if (bestRoute.coordinates && bestRoute.coordinates.length >= 2) {
+            const startCoord = bestRoute.coordinates[0];
+            const endCoord = bestRoute.coordinates[bestRoute.coordinates.length - 1];
+            setOriginLat(String(startCoord[0]));
+            setOriginLon(String(startCoord[1]));
+            setOriginName('AI Route Start');
+            setDestLat(String(endCoord[0]));
+            setDestLon(String(endCoord[1]));
+            setDestName('AI Route End');
+          }
+          setError(null);
+        }
+      }} />
     </div>
   );
 }
 
-function AIChatPanel({ gpsCenter }) {
+function AIChatPanel({ gpsCenter, onRouteCalculated }) {
   const [open, setOpen] = React.useState(false);
   const [messages, setMessages] = React.useState([{id:'1',role:'assistant',text:'Hi! I can help with flood info, safe routes, hospitals & more. Ask me anything!'}]);
   const [input, setInput] = React.useState('');
@@ -315,7 +334,23 @@ function AIChatPanel({ gpsCenter }) {
     setLoading(true);
     try {
       const res = await axios.post(`${API_URL}/chat`, {message: userMsg.text, lat: gpsCenter?.[0] || null, lon: gpsCenter?.[1] || null});
-      setMessages(prev => [...prev, {id:(Date.now()+1).toString(), role:'assistant', text: res.data.response || 'No response', category: res.data.category}]);
+      
+      // Check if AI response includes route data
+      const hasRoutes = res.data.routes && Array.isArray(res.data.routes) && res.data.routes.length > 0;
+      
+      const assistantText = res.data.response || 'No response';
+      setMessages(prev => [...prev, {
+        id:(Date.now()+1).toString(), 
+        role:'assistant', 
+        text: assistantText, 
+        category: res.data.category,
+        hasRoutes: hasRoutes,
+      }]);
+
+      // If routes were calculated, push them to the map
+      if (hasRoutes && onRouteCalculated) {
+        onRouteCalculated(res.data.routes);
+      }
     } catch (err) {
       setMessages(prev => [...prev, {id:(Date.now()+1).toString(), role:'assistant', text: 'Error: ' + (err.response?.data?.detail || err.message), isError: true}]);
     } finally { setLoading(false); }
@@ -346,6 +381,12 @@ function AIChatPanel({ gpsCenter }) {
           <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div className={`max-w-[85%] px-3 py-2 rounded-lg text-sm ${msg.role === 'user' ? 'bg-primary-600 text-white' : msg.isError ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-gray-100 text-gray-800'}`}>
               <p className="whitespace-pre-wrap">{msg.text}</p>
+              {msg.hasRoutes && (
+                <div className="mt-2 flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 rounded text-[10px] font-medium">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l5.447 2.724A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>
+                  Route displayed on map
+                </div>
+              )}
               {msg.category && <span className="text-[9px] opacity-60 block mt-1">{msg.category}</span>}
             </div>
           </div>
@@ -356,7 +397,7 @@ function AIChatPanel({ gpsCenter }) {
 
       {/* Quick suggestions */}
       <div className="px-3 py-1 flex gap-1 overflow-x-auto border-t border-gray-50">
-        {['Is AIIMS flooded?','Safe route to hospital','Which areas are flooded?','Can ambulance reach me?'].map((s,i) => (
+        {['Safe route to hospital','Route from India Gate to AIIMS','Which areas are flooded?','Can ambulance reach me?'].map((s,i) => (
           <button key={i} onClick={() => {setInput(s); }} className="text-[9px] px-2 py-1 bg-gray-100 text-gray-600 rounded-full whitespace-nowrap hover:bg-primary-50 hover:text-primary-700 flex-shrink-0">{s}</button>
         ))}
       </div>
