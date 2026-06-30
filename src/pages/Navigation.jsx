@@ -10,16 +10,17 @@ const API_URL = 'http://localhost:8000/api/v1';
 const ROUTE_COLORS = ['#9B30FF', '#FF6600', '#000000'];
 const originIcon = L.divIcon({ className: '', html: '<div style="background:#22c55e;width:28px;height:28px;border-radius:50%;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;color:white;font-weight:bold;font-size:12px;">A</div>', iconSize: [28, 28], iconAnchor: [14, 14] });
 const destIcon = L.divIcon({ className: '', html: '<div style="background:#ef4444;width:28px;height:28px;border-radius:50%;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;color:white;font-weight:bold;font-size:12px;">B</div>', iconSize: [28, 28], iconAnchor: [14, 14] });
-const cityPresets = [{ name: 'Delhi', place: 'New Delhi, India' }, { name: 'Gujrat PK', place: 'Gujrat, Punjab, Pakistan' }, { name: 'Mumbai', place: 'Mumbai, India' }, { name: 'Lahore', place: 'Lahore, Pakistan' }, { name: 'Chennai', place: 'Chennai, India' }];
-const mapCenters = { 'New Delhi, India': [28.63, 77.22], 'Mumbai, India': [19.07, 72.87], 'Chennai, India': [13.08, 80.27], 'Gujrat, Punjab, Pakistan': [32.57, 73.67], 'Lahore, Pakistan': [31.52, 74.35] };
+const cityPresets = [{ name: 'Delhi', place: 'New Delhi, India' }, { name: 'Mumbai', place: 'Mumbai, India' }, { name: 'Chennai', place: 'Chennai, India' }, { name: 'Bangalore', place: 'Bangalore, India' }, { name: 'Kolkata', place: 'Kolkata, India' }, { name: 'Hyderabad', place: 'Hyderabad, India' }];
+const mapCenters = { 'New Delhi, India': [28.63, 77.22], 'Mumbai, India': [19.07, 72.87], 'Chennai, India': [13.08, 80.27], 'Bangalore, India': [12.97, 77.59], 'Kolkata, India': [22.57, 88.36], 'Hyderabad, India': [17.38, 78.49] };
 
 // City boundaries (approximate administrative polygons)
 const cityBounds = {
   'New Delhi, India': [[28.40, 76.84], [28.88, 77.35]],
   'Mumbai, India': [[18.89, 72.77], [19.27, 72.98]],
   'Chennai, India': [[12.83, 80.10], [13.23, 80.33]],
-  'Gujrat, Punjab, Pakistan': [[32.50, 73.60], [32.65, 73.80]],
-  'Lahore, Pakistan': [[31.35, 74.20], [31.65, 74.45]],
+  'Bangalore, India': [[12.85, 77.45], [13.15, 77.75]],
+  'Kolkata, India': [[22.45, 88.25], [22.65, 88.45]],
+  'Hyderabad, India': [[17.30, 78.35], [17.50, 78.60]],
 };
 
 const cityPolygons = {
@@ -41,17 +42,21 @@ const cityPolygons = {
     [12.85, 80.14], [12.92, 80.12], [13.00, 80.11], [13.08, 80.12],
     [13.15, 80.14], [13.20, 80.16], [13.23, 80.18],
   ],
-  'Gujrat, Punjab, Pakistan': [
-    [32.62, 73.64], [32.61, 73.72], [32.59, 73.77], [32.56, 73.78],
-    [32.53, 73.76], [32.51, 73.72], [32.50, 73.67], [32.51, 73.63],
-    [32.53, 73.60], [32.56, 73.59], [32.59, 73.60], [32.61, 73.62],
-    [32.62, 73.64],
+  'Bangalore, India': [
+    [13.15, 77.55], [13.12, 77.68], [13.05, 77.74], [12.97, 77.75],
+    [12.90, 77.72], [12.85, 77.65], [12.85, 77.55], [12.87, 77.48],
+    [12.92, 77.45], [12.97, 77.44], [13.05, 77.46], [13.10, 77.50],
+    [13.15, 77.55],
   ],
-  'Lahore, Pakistan': [
-    [31.63, 74.28], [31.62, 74.38], [31.58, 74.43], [31.53, 74.44],
-    [31.47, 74.42], [31.42, 74.38], [31.38, 74.33], [31.37, 74.28],
-    [31.38, 74.23], [31.42, 74.20], [31.47, 74.20], [31.53, 74.21],
-    [31.58, 74.23], [31.62, 74.25], [31.63, 74.28],
+  'Kolkata, India': [
+    [22.65, 88.30], [22.63, 88.40], [22.58, 88.44], [22.52, 88.43],
+    [22.47, 88.40], [22.45, 88.35], [22.46, 88.28], [22.50, 88.25],
+    [22.55, 88.24], [22.60, 88.26], [22.63, 88.28], [22.65, 88.30],
+  ],
+  'Hyderabad, India': [
+    [17.50, 78.42], [17.48, 78.55], [17.43, 78.59], [17.37, 78.58],
+    [17.32, 78.55], [17.30, 78.48], [17.31, 78.40], [17.35, 78.36],
+    [17.40, 78.35], [17.45, 78.37], [17.48, 78.40], [17.50, 78.42],
   ],
 };
 
@@ -92,7 +97,16 @@ export default function Navigation() {
   const [selectMode, setSelectMode] = useState(null);
   const [dbFloodZones, setDbFloodZones] = useState(null);
   const [loadingFlood, setLoadingFlood] = useState(false);
+  const [gpsCenter, setGpsCenter] = useState(null);
   const { selectedVehicle } = useVehicleStore();
+
+  // Try to get GPS location for initial map center
+  React.useEffect(() => {
+    navigator.geolocation?.getCurrentPosition(
+      (pos) => setGpsCenter([pos.coords.latitude, pos.coords.longitude]),
+      () => {} // silently fail, use Delhi as default
+    );
+  }, []);
 
   // Search states
   const [originSearch, setOriginSearch] = useState('');
@@ -106,7 +120,7 @@ export default function Navigation() {
 
   const hasOrigin = originLat !== '' && originLon !== '' && !isNaN(parseFloat(originLat)) && !isNaN(parseFloat(originLon));
   const hasDest = destLat !== '' && destLon !== '' && !isNaN(parseFloat(destLat)) && !isNaN(parseFloat(destLon));
-  const getMapCenter = () => { if (hasOrigin) return [parseFloat(originLat), parseFloat(originLon)]; return mapCenters[place] || [28.63, 77.22]; };
+  const getMapCenter = () => { if (hasOrigin) return [parseFloat(originLat), parseFloat(originLon)]; if (gpsCenter) return gpsCenter; return mapCenters[place] || [28.63, 77.22]; };
 
   const handleMapClick = (latlng) => {
     if (selectMode === 'origin') { setOriginLat(latlng.lat.toFixed(5)); setOriginLon(latlng.lng.toFixed(5)); setOriginName(`${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)}`); setSelectMode(null); }
