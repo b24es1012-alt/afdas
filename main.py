@@ -24,6 +24,7 @@ from api.flood import router as flood_router
 from api.analytics import router as analytics_router
 from api.health import router as health_router
 from api.auth import router as auth_router
+from api.visualize import router as visualize_router
 
 
 # ============================================================================
@@ -154,6 +155,7 @@ app.include_router(navigation_router, prefix="/api/v1")
 app.include_router(chat_router, prefix="/api/v1")
 app.include_router(flood_router, prefix="/api/v1")
 app.include_router(analytics_router, prefix="/api/v1")
+app.include_router(visualize_router, prefix="/api/v1")
 
 
 # ============================================================================

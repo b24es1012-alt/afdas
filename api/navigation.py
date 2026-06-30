@@ -5,8 +5,11 @@ Navigation API endpoints — flood-safe routing.
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from typing import Optional, List, Tuple
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
 
 from auth.middleware import get_current_user, CurrentUser
+from database.connection import get_db
 from routing.service import RoutingService, RouteResult
 from routing.rerouting import ReroutingService
 from graph.loader import GraphLoader
@@ -65,6 +68,7 @@ def _get_routing_service() -> RoutingService:
 async def calculate_route(
     request: RouteRequest,
     user: Optional[CurrentUser] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Compute flood-safe routes between two points.
@@ -103,6 +107,39 @@ async def calculate_route(
                 vehicle_type=request.vehicle_type,
                 message="No passable routes found. All roads may be flooded.",
             )
+
+        # Save best route to database
+        try:
+            best = routes[0]
+            user_id = user.user_id if user else None
+            await db.execute(
+                text("""
+                    INSERT INTO route_history (event_id, user_id, start_lat, start_lon,
+                                               end_lat, end_lon, vehicle_type,
+                                               total_distance_m, estimated_time_s,
+                                               risk_score, flooded_segments, created_at)
+                    VALUES (:event_id, :user_id, :start_lat, :start_lon,
+                            :end_lat, :end_lon, :vehicle_type,
+                            :distance, :time, :risk, :flooded, NOW())
+                """),
+                {
+                    "event_id": int(request.event_id) if request.event_id else None,
+                    "user_id": user_id,
+                    "start_lat": request.start_lat,
+                    "start_lon": request.start_lon,
+                    "end_lat": request.end_lat,
+                    "end_lon": request.end_lon,
+                    "vehicle_type": request.vehicle_type,
+                    "distance": best.total_distance_m,
+                    "time": best.estimated_time_s,
+                    "risk": best.risk_score,
+                    "flooded": best.flooded_segments,
+                },
+            )
+            await db.commit()
+            logger.info("Route saved to history")
+        except Exception as save_err:
+            logger.warning(f"Failed to save route history: {save_err}")
 
         return RouteResponse(
             success=True,
