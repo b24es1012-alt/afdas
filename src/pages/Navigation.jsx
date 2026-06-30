@@ -130,7 +130,7 @@ export default function Navigation() {
         });
         setRoutes(fixedRoutes); setSelectedRouteIndex(0); 
       }
-      else { setError(res.data.message || 'No routes found'); }
+      else { setError(res.data.message || 'No routes found. Try: 1) Pick points closer to roads, 2) Use a larger city area, 3) Try "truck" vehicle (higher flood tolerance)'); }
     } catch (err) { setError(err.response?.data?.detail || err.message || 'Failed'); }
     finally { setIsCalculating(false); }
   };
