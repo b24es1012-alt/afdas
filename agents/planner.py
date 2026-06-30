@@ -318,10 +318,11 @@ def create_flood_agent_graph(tools_map: dict) -> StateGraph:
     # Nodes
     workflow.add_node("classifier", classification_node)
     workflow.add_node("planner", planner_node)
-    workflow.add_node(
-        "tool_executor",
-        lambda state: tool_executor_node(state, tools_map),
-    )
+
+    async def _tool_executor_wrapper(state):
+        return await tool_executor_node(state, tools_map)
+
+    workflow.add_node("tool_executor", _tool_executor_wrapper)
     workflow.add_node("responder", responder_node)
 
     # Entry
