@@ -26,12 +26,12 @@ export default function AppRoutes() {
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-        <Route path="/navigate" element={<Navigation />} />
       </Route>
 
       {/* Protected routes */}
       <Route element={<PrivateRoute><DashboardLayout /></PrivateRoute>}>
         <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/navigate" element={<Navigation />} />
         <Route path="/chat" element={<ChatPage />} />
         <Route path="/analytics" element={<Analytics />} />
         <Route path="/history" element={<History />} />
