@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Loader2, RotateCcw, Navigation as NavIcon, Droplets } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, Polyline, Popup, useMapEvents, GeoJSON, Rectangle, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Polyline, Popup, useMapEvents, GeoJSON, Polygon, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import VehicleSelector from '../components/navigation/VehicleSelector';
 import { useVehicleStore } from '../store/vehicleStore';
@@ -13,13 +13,46 @@ const destIcon = L.divIcon({ className: '', html: '<div style="background:#ef444
 const cityPresets = [{ name: 'Delhi', place: 'New Delhi, India' }, { name: 'Gujrat PK', place: 'Gujrat, Punjab, Pakistan' }, { name: 'Mumbai', place: 'Mumbai, India' }, { name: 'Lahore', place: 'Lahore, Pakistan' }, { name: 'Chennai', place: 'Chennai, India' }];
 const mapCenters = { 'New Delhi, India': [28.63, 77.22], 'Mumbai, India': [19.07, 72.87], 'Chennai, India': [13.08, 80.27], 'Gujrat, Punjab, Pakistan': [32.57, 73.67], 'Lahore, Pakistan': [31.52, 74.35] };
 
-// City bounding boxes [south, west, north, east]
+// City boundaries (approximate administrative polygons)
 const cityBounds = {
   'New Delhi, India': [[28.40, 76.84], [28.88, 77.35]],
   'Mumbai, India': [[18.89, 72.77], [19.27, 72.98]],
   'Chennai, India': [[12.83, 80.10], [13.23, 80.33]],
   'Gujrat, Punjab, Pakistan': [[32.50, 73.60], [32.65, 73.80]],
   'Lahore, Pakistan': [[31.35, 74.20], [31.65, 74.45]],
+};
+
+const cityPolygons = {
+  'New Delhi, India': [
+    [28.88, 77.10], [28.85, 77.28], [28.78, 77.34], [28.70, 77.33],
+    [28.62, 77.35], [28.55, 77.32], [28.50, 77.25], [28.48, 77.15],
+    [28.50, 77.05], [28.55, 76.95], [28.62, 76.87], [28.70, 76.84],
+    [28.78, 76.87], [28.85, 76.95], [28.88, 77.10],
+  ],
+  'Mumbai, India': [
+    [19.27, 72.82], [19.25, 72.90], [19.20, 72.95], [19.12, 72.97],
+    [19.05, 72.95], [18.97, 72.92], [18.92, 72.87], [18.90, 72.82],
+    [18.92, 72.78], [18.97, 72.77], [19.05, 72.78], [19.12, 72.78],
+    [19.20, 72.79], [19.25, 72.80], [19.27, 72.82],
+  ],
+  'Chennai, India': [
+    [13.23, 80.18], [13.20, 80.28], [13.15, 80.32], [13.08, 80.30],
+    [13.00, 80.28], [12.92, 80.25], [12.85, 80.22], [12.83, 80.18],
+    [12.85, 80.14], [12.92, 80.12], [13.00, 80.11], [13.08, 80.12],
+    [13.15, 80.14], [13.20, 80.16], [13.23, 80.18],
+  ],
+  'Gujrat, Punjab, Pakistan': [
+    [32.62, 73.64], [32.61, 73.72], [32.59, 73.77], [32.56, 73.78],
+    [32.53, 73.76], [32.51, 73.72], [32.50, 73.67], [32.51, 73.63],
+    [32.53, 73.60], [32.56, 73.59], [32.59, 73.60], [32.61, 73.62],
+    [32.62, 73.64],
+  ],
+  'Lahore, Pakistan': [
+    [31.63, 74.28], [31.62, 74.38], [31.58, 74.43], [31.53, 74.44],
+    [31.47, 74.42], [31.42, 74.38], [31.38, 74.33], [31.37, 74.28],
+    [31.38, 74.23], [31.42, 74.20], [31.47, 74.20], [31.53, 74.21],
+    [31.58, 74.23], [31.62, 74.25], [31.63, 74.28],
+  ],
 };
 
 function MapClickHandler({ onClick }) { 
@@ -156,7 +189,7 @@ export default function Navigation() {
               <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap" />
               <MapClickHandler onClick={handleMapClick} />
               {cityBounds[place] && <FitBounds bounds={cityBounds[place]} />}
-              {cityBounds[place] && <Rectangle bounds={cityBounds[place]} pathOptions={{color: '#6366f1', weight: 2, fillOpacity: 0.03, dashArray: '6 4'}} />}
+              {cityPolygons[place] && <Polygon positions={cityPolygons[place]} pathOptions={{color: '#6366f1', weight: 2, fillOpacity: 0.02, dashArray: '8 4'}} />}
               {hasOrigin && <Marker position={[parseFloat(originLat), parseFloat(originLon)]} icon={originIcon}><Popup><b>Origin (A)</b></Popup></Marker>}
               {hasDest && <Marker position={[parseFloat(destLat), parseFloat(destLon)]} icon={destIcon}><Popup><b>Destination (B)</b></Popup></Marker>}
               {routes.map((route, idx) => route.coordinates?.length > 0 && <Polyline key={idx} positions={route.coordinates} pathOptions={{color:ROUTE_COLORS[idx%3],weight:idx===selectedRouteIndex?6:3,opacity:idx===selectedRouteIndex?1:0.4,dashArray:idx===selectedRouteIndex?null:'8 6'}} />)}
