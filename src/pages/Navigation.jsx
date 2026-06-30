@@ -83,13 +83,6 @@ export default function Navigation() {
     setRoutes([]);
 
     try {
-      // If virtual flood, create it in DB first
-        try {
-          await axios.post(`${API_URL}/flood/depth`, {
-          });
-        } catch (e) { /* ignore */ }
-      }
-
       const response = await axios.post(`${API_URL}/navigation/route`, {
         start_lat: parseFloat(origin.lat),
         start_lon: parseFloat(origin.lon),
