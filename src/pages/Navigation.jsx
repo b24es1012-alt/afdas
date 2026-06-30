@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Loader2, RotateCcw, Navigation as NavIcon, Droplets } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Polyline, Popup, useMapEvents, GeoJSON, Rectangle, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -24,8 +24,11 @@ const cityBounds = {
 
 function MapClickHandler({ onClick }) { 
   const map = useMapEvents({ click: (e) => onClick(e.latlng) }); 
-  // Fix map size after render (prevents click offset)
-  setTimeout(() => map.invalidateSize(), 100);
+  // Fix map size calculation (prevents click offset in flex layouts)
+  React.useEffect(() => {
+    const timer = setInterval(() => map.invalidateSize(), 500);
+    return () => clearInterval(timer);
+  }, [map]);
   return null; 
 }
 
