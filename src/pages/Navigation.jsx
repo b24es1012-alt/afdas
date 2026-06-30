@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Loader2, RotateCcw, MapPin, Navigation as NavIcon, Droplets, Plus, Trash2 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Polyline, Popup, Circle, useMapEvents, Polygon } from 'react-leaflet';
 import L from 'leaflet';
+import VehicleSelector from '../components/navigation/VehicleSelector';
 import { useVehicleStore } from '../store/vehicleStore';
 import axios from 'axios';
 
