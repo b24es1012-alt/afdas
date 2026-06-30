@@ -112,11 +112,37 @@ export default function Navigation() {
   const [gpsCenter, setGpsCenter] = useState(null);
   const { selectedVehicle } = useVehicleStore();
 
-  // Try to get GPS location for initial map center
+  // Try to get GPS location for initial map center AND auto-detect city
   React.useEffect(() => {
     navigator.geolocation?.getCurrentPosition(
-      (pos) => setGpsCenter([pos.coords.latitude, pos.coords.longitude]),
-      () => {} // silently fail, use Delhi as default
+      async (pos) => {
+        const { latitude, longitude } = pos.coords;
+        setGpsCenter([latitude, longitude]);
+
+        // Reverse geocode GPS to detect user's city
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&zoom=10`,
+            { headers: { 'User-Agent': 'AFDAS/1.0' } }
+          );
+          const data = await res.json();
+          const city = data?.address?.city || data?.address?.state_district || data?.address?.town || '';
+          
+          // Match against supported city presets
+          const matched = cityPresets.find((c) =>
+            c.place.toLowerCase().includes(city.toLowerCase()) ||
+            city.toLowerCase().includes(c.name.toLowerCase())
+          );
+
+          if (matched) {
+            setPlace(matched.place);
+          }
+          // If no match, keep default 'New Delhi, India'
+        } catch (err) {
+          // Geocoding failed silently — keep Delhi default
+        }
+      },
+      () => {} // GPS denied — keep Delhi as default
     );
   }, []);
 
