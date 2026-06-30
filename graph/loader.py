@@ -56,7 +56,7 @@ class GraphLoader:
         # ── Step 1: Get or build BASE graph ──────────────────────────────
         base_key = f"base:{event_id or 'default'}:{place}"
         G_base, G_simple_base, edges_gdf_base = await self._get_base_graph(
-            base_key, place, flood_shapefile, flood_gdf
+            base_key, place, flood_shapefile, flood_gdf, event_id
         )
 
         # ── Step 2: Apply vehicle weights to a COPY ──────────────────────
@@ -77,6 +77,7 @@ class GraphLoader:
         place: str,
         flood_shapefile: Optional[str] = None,
         flood_gdf: Optional[gpd.GeoDataFrame] = None,
+        event_id: Optional[str] = None,
     ) -> Tuple[nx.MultiDiGraph, nx.DiGraph, gpd.GeoDataFrame]:
         """
         Get the BASE graph (topology + flood annotation, NO vehicle weights).
@@ -91,11 +92,12 @@ class GraphLoader:
 
         logger.info(f"BASE graph cache MISS: {cache_key} — building...")
 
-        # Build base graph (download OSM + annotate flood)
+        # Build base graph (download OSM + annotate flood + save flooded roads to DB)
         G, G_simple, edges_gdf = self.builder.build_from_place(
             place=place,
             flood_shapefile=flood_shapefile,
             flood_gdf=flood_gdf,
+            event_id=int(event_id) if event_id else None,
         )
 
         # Cache the BASE graph (no vehicle weights applied)

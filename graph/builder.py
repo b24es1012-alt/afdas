@@ -38,6 +38,7 @@ class GraphBuilder:
         flood_shapefile: Optional[str] = None,
         flood_gdf: Optional[gpd.GeoDataFrame] = None,
         network_type: str = "drive",
+        event_id: Optional[int] = None,
     ) -> Tuple[nx.MultiDiGraph, nx.DiGraph, gpd.GeoDataFrame]:
         """
         Build a flood-annotated road graph for a place.
@@ -83,6 +84,9 @@ class GraphBuilder:
 
         # Step 5: Create simplified DiGraph
         G_simple = self.graph_converter.simplify_graph(G)
+
+        # Step 6: Save roads and flooded roads to database
+        self._save_roads_to_db(edges_gdf, event_id=event_id)
 
         logger.info(
             f"Graph built: {G.number_of_nodes()} nodes, "
@@ -198,3 +202,176 @@ class GraphBuilder:
 
         except Exception as e:
             logger.warning(f"Building download failed (non-fatal): {e}")
+
+
+    def _save_roads_to_db(self, edges_gdf: gpd.GeoDataFrame, event_id: Optional[int] = None):
+        """
+        Save roads and flooded roads to the database after graph construction.
+        
+        - All edges → `roads` table (ON CONFLICT skip if already exists)
+        - Edges with flood_level > 0 → `flooded_roads` table
+        """
+        import asyncio
+        from database.connection import DatabaseManager
+        from sqlalchemy import text
+
+        try:
+            flooded_edges = edges_gdf[edges_gdf["flood_level"] > 0]
+            total_edges = len(edges_gdf)
+            flooded_count = len(flooded_edges)
+
+            if total_edges == 0:
+                return
+
+            logger.info(f"Saving {total_edges} roads to DB ({flooded_count} flooded)...")
+
+            async def _save():
+                async with DatabaseManager.session() as session:
+                    # Save all roads
+                    roads_saved = 0
+                    for idx, row in edges_gdf.iterrows():
+                        try:
+                            u, v, key = idx
+                            osm_id = row.get("osmid", None)
+                            if isinstance(osm_id, list):
+                                osm_id = osm_id[0] if osm_id else None
+
+                            name = row.get("name", None)
+                            if isinstance(name, list):
+                                name = name[0] if name else None
+
+                            road_type = row.get("highway", "residential")
+                            if isinstance(road_type, list):
+                                road_type = road_type[0] if road_type else "residential"
+
+                            length = row.get("length", 0) or 0
+                            max_speed = row.get("maxspeed", None)
+                            if isinstance(max_speed, list):
+                                max_speed = max_speed[0] if max_speed else None
+                            if isinstance(max_speed, str):
+                                try:
+                                    max_speed = float(max_speed.replace("mph", "").replace("kph", "").strip())
+                                except (ValueError, AttributeError):
+                                    max_speed = None
+
+                            lanes = row.get("lanes", None)
+                            if isinstance(lanes, list):
+                                lanes = lanes[0] if lanes else None
+                            if isinstance(lanes, str):
+                                try:
+                                    lanes = int(lanes)
+                                except (ValueError, TypeError):
+                                    lanes = None
+
+                            is_bridge = bool(row.get("bridge", False))
+                            is_tunnel = bool(row.get("tunnel", False))
+                            is_oneway = bool(row.get("oneway", False))
+                            surface = row.get("surface", None)
+                            if isinstance(surface, list):
+                                surface = surface[0] if surface else None
+
+                            # Get geometry as WKT
+                            geom = row.get("geometry", None)
+                            if geom is None:
+                                continue
+                            geom_wkt = geom.wkt
+
+                            await session.execute(
+                                text("""
+                                    INSERT INTO roads (osm_id, name, road_type, geometry, length_m,
+                                                      max_speed, lanes, is_bridge, is_tunnel,
+                                                      is_oneway, surface, event_id, created_at)
+                                    VALUES (:osm_id, :name, :road_type,
+                                            ST_GeomFromText(:geom, 4326),
+                                            :length, :max_speed, :lanes,
+                                            :is_bridge, :is_tunnel, :is_oneway,
+                                            :surface, :event_id, NOW())
+                                    ON CONFLICT (osm_id) DO NOTHING
+                                """),
+                                {
+                                    "osm_id": int(osm_id) if osm_id else None,
+                                    "name": str(name)[:255] if name else None,
+                                    "road_type": str(road_type)[:50],
+                                    "geom": geom_wkt,
+                                    "length": float(length),
+                                    "max_speed": float(max_speed) if max_speed else None,
+                                    "lanes": int(lanes) if lanes else None,
+                                    "is_bridge": is_bridge,
+                                    "is_tunnel": is_tunnel,
+                                    "is_oneway": is_oneway,
+                                    "surface": str(surface)[:50] if surface else None,
+                                    "event_id": event_id,
+                                },
+                            )
+                            roads_saved += 1
+                        except Exception:
+                            pass
+
+                    await session.commit()
+                    logger.info(f"Saved {roads_saved} roads to database")
+
+                    # Now save flooded roads
+                    if flooded_count > 0 and event_id:
+                        flooded_saved = 0
+                        for idx, row in flooded_edges.iterrows():
+                            try:
+                                u, v, key = idx
+                                osm_id = row.get("osmid", None)
+                                if isinstance(osm_id, list):
+                                    osm_id = osm_id[0] if osm_id else None
+                                if not osm_id:
+                                    continue
+
+                                flood_level = float(row.get("flood_level", 0))
+                                length = float(row.get("length", 0) or 0)
+
+                                # Get road_id from roads table
+                                result = await session.execute(
+                                    text("SELECT id FROM roads WHERE osm_id = :osm_id LIMIT 1"),
+                                    {"osm_id": int(osm_id)},
+                                )
+                                road_row = result.fetchone()
+                                if not road_row:
+                                    continue
+
+                                road_id = road_row[0]
+
+                                await session.execute(
+                                    text("""
+                                        INSERT INTO flooded_roads (event_id, road_id, max_depth,
+                                                                   avg_depth, flooded_percentage,
+                                                                   risk_score, created_at)
+                                        VALUES (:event_id, :road_id, :max_depth, :avg_depth,
+                                                :flooded_pct, :risk_score, NOW())
+                                        ON CONFLICT (event_id, road_id) DO UPDATE SET
+                                            max_depth = GREATEST(flooded_roads.max_depth, EXCLUDED.max_depth),
+                                            avg_depth = EXCLUDED.avg_depth,
+                                            risk_score = EXCLUDED.risk_score
+                                    """),
+                                    {
+                                        "event_id": event_id,
+                                        "road_id": road_id,
+                                        "max_depth": flood_level,
+                                        "avg_depth": flood_level,
+                                        "flooded_pct": 100.0,
+                                        "risk_score": min(flood_level / 1.0, 1.0),
+                                    },
+                                )
+                                flooded_saved += 1
+                            except Exception:
+                                pass
+
+                        await session.commit()
+                        logger.info(f"Saved {flooded_saved} flooded roads to database")
+                    elif flooded_count > 0 and not event_id:
+                        logger.info(f"Skipped flooded_roads save: no event_id provided ({flooded_count} flooded edges)")
+
+            # Run async save
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(_save())
+            except RuntimeError:
+                asyncio.run(_save())
+
+        except Exception as e:
+            logger.warning(f"Road DB save failed (non-fatal): {e}")
