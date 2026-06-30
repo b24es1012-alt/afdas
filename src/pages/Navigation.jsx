@@ -131,6 +131,8 @@ export default function Navigation() {
           );
           const data = await res.json();
           const city = data?.address?.city || data?.address?.state_district || data?.address?.town || '';
+          const state = data?.address?.state || '';
+          const country = data?.address?.country || 'India';
           
           // Match against supported city presets
           const matched = cityPresets.find((c) =>
@@ -140,6 +142,9 @@ export default function Navigation() {
 
           if (matched) {
             setPlace(matched.place);
+          } else if (city) {
+            // Not a preset city — use actual GPS city name
+            setPlace(`${city}, ${country}`);
           }
         } catch (err) {
           // Geocoding failed silently — keep Delhi default
