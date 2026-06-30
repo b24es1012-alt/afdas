@@ -31,7 +31,7 @@ class ChatResponse(BaseModel):
     category: str
     vehicle_type: str
     steps_executed: int
-    routes: Optional[list] = None  # Route coordinates for map display
+    routes: Optional[str] = None  # Route info text from AI (if route was calculated)
 
 
 # ── Endpoint ─────────────────────────────────────────────────────────────────
