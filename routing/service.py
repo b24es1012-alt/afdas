@@ -95,24 +95,58 @@ class RoutingService:
         is_valid, message = self.validator.validate_for_routing(G_simple, source, target)
         if not is_valid:
             logger.warning(f"Routing validation failed: {message}")
-            # Fallback: route by distance only, ignoring flood weights
             logger.info("Fallback: routing by distance (ignoring flood blocks)...")
             try:
-                # Convert MultiDiGraph to simple DiGraph by length for fallback
+                # Build clean DiGraph ignoring flood weights
                 G_fallback = nx.DiGraph()
                 for u, v, data in G.edges(data=True):
                     length = data.get("length", 1)
                     if not G_fallback.has_edge(u, v) or length < G_fallback[u][v].get("length", float("inf")):
-                        G_fallback.add_edge(u, v, **data)
-                        G_fallback[u][v]["length"] = length
+                        G_fallback.add_edge(u, v, length=length, flood_level=data.get("flood_level", 0))
+
+                # Copy node attributes (coordinates)
+                for node, attrs in G.nodes(data=True):
+                    if node in G_fallback:
+                        G_fallback.nodes[node].update(attrs)
+
+                logger.info(f"Fallback graph: {G_fallback.number_of_nodes()} nodes, {G_fallback.number_of_edges()} edges")
+                logger.info(f"Source: {source}, Target: {target}, Source in graph: {source in G_fallback}, Target in graph: {target in G_fallback}")
 
                 fallback_path = nx.shortest_path(G_fallback, source, target, weight="length")
-                if fallback_path:
-                    result = self._build_route_result(G, G_simple, fallback_path, 0, vehicle)
-                    logger.info(f"Fallback route found: {result.total_distance_m:.0f}m, {result.flooded_segments} flooded segments")
-                    return [result]
+                logger.info(f"Fallback path found: {len(fallback_path)} nodes")
+
+                # Build result using fallback graph
+                coordinates = []
+                total_distance = 0.0
+                flooded_segments = 0
+                for node in fallback_path:
+                    lat = G.nodes[node].get("y", 0)
+                    lon = G.nodes[node].get("x", 0)
+                    coordinates.append((lat, lon))
+                for u, v in zip(fallback_path[:-1], fallback_path[1:]):
+                    if G_fallback.has_edge(u, v):
+                        total_distance += G_fallback[u][v].get("length", 0)
+                        if G_fallback[u][v].get("flood_level", 0) > 0:
+                            flooded_segments += 1
+
+                result = RouteResult(
+                    route_index=0,
+                    nodes=fallback_path,
+                    coordinates=coordinates,
+                    total_distance_m=round(total_distance, 1),
+                    estimated_time_s=round(total_distance / (vehicle.average_speed * 1000 / 3600), 1),
+                    flooded_segments=flooded_segments,
+                    total_segments=len(fallback_path) - 1,
+                    risk_score=min(flooded_segments / max(len(fallback_path) - 1, 1), 1.0),
+                    max_flood_depth=0.0,
+                )
+                logger.info(f"Fallback route: {total_distance:.0f}m, {flooded_segments} flooded segments")
+                return [result]
+
             except (nx.NetworkXNoPath, nx.NodeNotFound) as e:
-                logger.warning(f"Fallback also failed: {e}")
+                logger.warning(f"Fallback failed: {e}")
+            except Exception as e:
+                logger.error(f"Fallback error: {e}")
             return []
 
         # Find K paths on a working copy (Yen's modifies the graph)
