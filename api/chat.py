@@ -73,7 +73,13 @@ async def chat(
         from agents.tools import get_tools_map
 
         tools_map = get_tools_map()
-        result = await run_agent(request.message, tools_map)
+        
+        # Add location context to the query if GPS provided
+        query = request.message
+        if request.lat and request.lon:
+            query = f"{request.message}\n[User GPS: lat={request.lat}, lon={request.lon}]"
+
+        result = await run_agent(query, tools_map)
 
         # Extract final response
         final_message = ""
