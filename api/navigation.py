@@ -88,6 +88,50 @@ async def calculate_route(
     )
 
     try:
+        # Load active flood zones from database as GeoDataFrame
+        flood_gdf = None
+        try:
+            from sqlalchemy import text
+            import geopandas as gpd
+            from shapely import wkt
+
+            # Get active flood zones
+            event_filter = ""
+            params = {}
+            if request.event_id:
+                event_filter = "AND fz.event_id = :event_id"
+                params["event_id"] = int(request.event_id)
+
+            result = await db.execute(
+                text(f"""
+                    SELECT ST_AsText(fz.geometry) as geom_wkt, fz.max_depth
+                    FROM flood_zones fz
+                    JOIN flood_events fe ON fe.id = fz.event_id
+                    WHERE fe.is_active = TRUE {event_filter}
+                """),
+                params,
+            )
+            rows = result.fetchall()
+
+            if rows:
+                from shapely.geometry import shape
+                from shapely import wkt as shapely_wkt
+                geometries = []
+                depths = []
+                for row in rows:
+                    r = dict(row._mapping)
+                    geom = shapely_wkt.loads(r["geom_wkt"])
+                    geometries.append(geom)
+                    depths.append(r["max_depth"] or 1.0)
+
+                flood_gdf = gpd.GeoDataFrame(
+                    {"geometry": geometries, "depth": depths},
+                    crs="EPSG:4326"
+                )
+                logger.info(f"Loaded {len(flood_gdf)} flood zones from database")
+        except Exception as flood_err:
+            logger.warning(f"Could not load flood data: {flood_err}")
+
         service = _get_routing_service()
         routes = await service.find_routes(
             start_lat=request.start_lat,
@@ -97,6 +141,7 @@ async def calculate_route(
             vehicle_type=request.vehicle_type,
             k=request.k,
             place=request.place,
+            flood_gdf=flood_gdf,
             event_id=request.event_id,
         )
 
