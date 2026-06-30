@@ -268,6 +268,81 @@ export default function Navigation() {
           {routes[selectedRouteIndex] && <div className="mt-4 card p-4"><h3 className="text-sm font-semibold mb-2" style={{color:ROUTE_COLORS[selectedRouteIndex]}}>Route {selectedRouteIndex+1}</h3><div className="grid grid-cols-4 gap-3 text-center text-sm"><div className="bg-gray-50 p-2 rounded"><p className="font-bold">{(routes[selectedRouteIndex].total_distance_m/1000).toFixed(1)}km</p><p className="text-[10px] text-gray-500">Distance</p></div><div className="bg-gray-50 p-2 rounded"><p className="font-bold">{Math.round(routes[selectedRouteIndex].estimated_time_s/60)}min</p><p className="text-[10px] text-gray-500">Time</p></div><div className="bg-gray-50 p-2 rounded"><p className="font-bold">{Math.round(routes[selectedRouteIndex].risk_score*100)}%</p><p className="text-[10px] text-gray-500">Risk</p></div><div className="bg-gray-50 p-2 rounded"><p className="font-bold">{routes[selectedRouteIndex].flooded_segments}</p><p className="text-[10px] text-gray-500">Flooded</p></div></div></div>}
         </div>
       </div>
+
+      {/* AI Assistant Panel */}
+      <AIChatPanel />
+    </div>
+  );
+}
+
+function AIChatPanel() {
+  const [open, setOpen] = React.useState(false);
+  const [messages, setMessages] = React.useState([{id:'1',role:'assistant',text:'Hi! I can help with flood info, safe routes, hospitals & more. Ask me anything!'}]);
+  const [input, setInput] = React.useState('');
+  const [loading, setLoading] = React.useState(false);
+  const messagesEndRef = React.useRef(null);
+
+  React.useEffect(() => { messagesEndRef.current?.scrollIntoView({behavior:'smooth'}); }, [messages]);
+
+  const sendMessage = async () => {
+    if (!input.trim() || loading) return;
+    const userMsg = {id: Date.now().toString(), role:'user', text: input.trim()};
+    setMessages(prev => [...prev, userMsg]);
+    setInput('');
+    setLoading(true);
+    try {
+      const res = await axios.post(`${API_URL}/chat`, {message: userMsg.text});
+      setMessages(prev => [...prev, {id:(Date.now()+1).toString(), role:'assistant', text: res.data.response || 'No response', category: res.data.category}]);
+    } catch (err) {
+      setMessages(prev => [...prev, {id:(Date.now()+1).toString(), role:'assistant', text: 'Error: ' + (err.response?.data?.detail || err.message), isError: true}]);
+    } finally { setLoading(false); }
+  };
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="fixed bottom-6 right-6 w-14 h-14 bg-primary-600 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-primary-700 transition-all z-50 animate-bounce" title="AI Assistant">
+        <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
+      </button>
+    );
+  }
+
+  return (
+    <div className="fixed bottom-6 right-6 w-96 h-[500px] bg-white rounded-xl shadow-2xl border border-gray-200 flex flex-col z-50">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-primary-50 rounded-t-xl">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 bg-primary-600 rounded-full flex items-center justify-center"><svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714a2.25 2.25 0 00.659 1.591L19 14.5" /></svg></div>
+          <div><p className="text-sm font-semibold text-gray-800">AI Flood Assistant</p><p className="text-[10px] text-gray-500">Ask about floods, routes, hospitals</p></div>
+        </div>
+        <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-600 p-1"><svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+        {messages.map(msg => (
+          <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[85%] px-3 py-2 rounded-lg text-sm ${msg.role === 'user' ? 'bg-primary-600 text-white' : msg.isError ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-gray-100 text-gray-800'}`}>
+              <p className="whitespace-pre-wrap">{msg.text}</p>
+              {msg.category && <span className="text-[9px] opacity-60 block mt-1">{msg.category}</span>}
+            </div>
+          </div>
+        ))}
+        {loading && <div className="flex gap-1 px-3 py-2"><span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" /><span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay:'150ms'}} /><span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay:'300ms'}} /></div>}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Quick suggestions */}
+      <div className="px-3 py-1 flex gap-1 overflow-x-auto border-t border-gray-50">
+        {['Is AIIMS flooded?','Safe route to hospital','Which areas are flooded?','Can ambulance reach me?'].map((s,i) => (
+          <button key={i} onClick={() => {setInput(s); }} className="text-[9px] px-2 py-1 bg-gray-100 text-gray-600 rounded-full whitespace-nowrap hover:bg-primary-50 hover:text-primary-700 flex-shrink-0">{s}</button>
+        ))}
+      </div>
+
+      {/* Input */}
+      <div className="px-3 py-2 border-t border-gray-100 flex gap-2">
+        <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && sendMessage()} placeholder="Ask about floods..." className="input-field text-sm py-2 flex-1" disabled={loading} />
+        <button onClick={sendMessage} disabled={!input.trim() || loading} className="px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"><svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg></button>
+      </div>
     </div>
   );
 }
