@@ -19,6 +19,22 @@ from utils.logger import agent_logger as logger
 # Lazy-loaded shared instances
 _osm_downloader: Optional[OSMDownloader] = None
 
+# Shared route result storage — allows chat.py to extract structured route data
+# after the calculate_route tool runs (since tools return text, not structured data)
+_last_route_results: Optional[List[Dict[str, Any]]] = None
+
+
+def get_last_route_results() -> Optional[List[Dict[str, Any]]]:
+    """Get the last calculated route results as structured data."""
+    global _last_route_results
+    return _last_route_results
+
+
+def clear_last_route_results():
+    """Clear stored route results."""
+    global _last_route_results
+    _last_route_results = None
+
 
 def _get_osm() -> OSMDownloader:
     global _osm_downloader
@@ -242,6 +258,7 @@ async def calculate_route(
         vehicle_type: Vehicle type (default: 'car')
         k: Number of alternative routes (default: 3)
     """
+    global _last_route_results
     from routing.service import RoutingService
     from graph.loader import GraphLoader
     from cache.graph_cache import GraphCache
@@ -261,7 +278,23 @@ async def calculate_route(
         )
 
         if not routes:
+            _last_route_results = None
             return "No routes found between the given coordinates."
+
+        # Store structured route data for frontend map display
+        _last_route_results = [
+            {
+                "route_index": route.route_index,
+                "coordinates": route.coordinates,  # List of (lat, lon) tuples
+                "total_distance_m": route.total_distance_m,
+                "estimated_time_s": route.estimated_time_s,
+                "flooded_segments": route.flooded_segments,
+                "total_segments": route.total_segments,
+                "risk_score": route.risk_score,
+                "max_flood_depth": route.max_flood_depth,
+            }
+            for route in routes
+        ]
 
         lines = [f"Found {len(routes)} route(s):\n"]
         for route in routes:
@@ -282,6 +315,7 @@ async def calculate_route(
         return "\n".join(lines)
 
     except Exception as e:
+        _last_route_results = None
         return f"Error calculating route: {e}"
 
 
