@@ -95,16 +95,24 @@ class RoutingService:
         is_valid, message = self.validator.validate_for_routing(G_simple, source, target)
         if not is_valid:
             logger.warning(f"Routing validation failed: {message}")
-            # Fallback: try without flood blocking (use raw distance)
-            logger.info("Attempting fallback routing ignoring flood blocks...")
+            # Fallback: route by distance only, ignoring flood weights
+            logger.info("Fallback: routing by distance (ignoring flood blocks)...")
             try:
-                fallback_path = nx.shortest_path(G, source, target, weight="length")
+                # Convert MultiDiGraph to simple DiGraph by length for fallback
+                G_fallback = nx.DiGraph()
+                for u, v, data in G.edges(data=True):
+                    length = data.get("length", 1)
+                    if not G_fallback.has_edge(u, v) or length < G_fallback[u][v].get("length", float("inf")):
+                        G_fallback.add_edge(u, v, **data)
+                        G_fallback[u][v]["length"] = length
+
+                fallback_path = nx.shortest_path(G_fallback, source, target, weight="length")
                 if fallback_path:
                     result = self._build_route_result(G, G_simple, fallback_path, 0, vehicle)
-                    logger.info("Fallback route found (may pass through flood)")
+                    logger.info(f"Fallback route found: {result.total_distance_m:.0f}m, {result.flooded_segments} flooded segments")
                     return [result]
-            except nx.NetworkXNoPath:
-                pass
+            except (nx.NetworkXNoPath, nx.NodeNotFound) as e:
+                logger.warning(f"Fallback also failed: {e}")
             return []
 
         # Find K paths on a working copy (Yen's modifies the graph)
