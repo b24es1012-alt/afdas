@@ -129,6 +129,8 @@ async def calculate_route(
                     crs="EPSG:4326"
                 )
                 logger.info(f"Loaded {len(flood_gdf)} flood zones from database")
+            else:
+                logger.info("No active flood zones in database")
         except Exception as flood_err:
             logger.warning(f"Could not load flood data: {flood_err}")
 

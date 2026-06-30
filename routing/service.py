@@ -95,6 +95,16 @@ class RoutingService:
         is_valid, message = self.validator.validate_for_routing(G_simple, source, target)
         if not is_valid:
             logger.warning(f"Routing validation failed: {message}")
+            # Fallback: try without flood blocking (use raw distance)
+            logger.info("Attempting fallback routing ignoring flood blocks...")
+            try:
+                fallback_path = nx.shortest_path(G, source, target, weight="length")
+                if fallback_path:
+                    result = self._build_route_result(G, G_simple, fallback_path, 0, vehicle)
+                    logger.info("Fallback route found (may pass through flood)")
+                    return [result]
+            except nx.NetworkXNoPath:
+                pass
             return []
 
         # Find K paths on a working copy (Yen's modifies the graph)
@@ -107,8 +117,15 @@ class RoutingService:
             if single_path:
                 paths = [single_path]
             else:
-                logger.warning("No routes found between given coordinates")
-                return []
+                # Last fallback: try shortest path by length on original graph
+                logger.info("A* failed, trying shortest path by length...")
+                try:
+                    fallback = nx.shortest_path(G, source, target, weight="length")
+                    if fallback:
+                        paths = [fallback]
+                except nx.NetworkXNoPath:
+                    logger.warning("No routes found between given coordinates")
+                    return []
 
         # Build route results
         results = []
