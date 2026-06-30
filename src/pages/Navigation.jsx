@@ -96,6 +96,17 @@ function FlyToGPS({ gpsCenter }) {
   return null;
 }
 
+// Follows GPS in real-time when isFollowing=true (during active navigation)
+function FollowGPS({ isFollowing, gpsLocation }) {
+  const map = useMap();
+  React.useEffect(() => {
+    if (isFollowing && gpsLocation) {
+      map.panTo([gpsLocation.lat, gpsLocation.lon], { animate: true, duration: 0.5 });
+    }
+  }, [isFollowing, gpsLocation]);
+  return null;
+}
+
 export default function Navigation() {
   const [originLat, setOriginLat] = useState('');
   const [originLon, setOriginLon] = useState('');
@@ -112,6 +123,7 @@ export default function Navigation() {
   const [dbFloodZones, setDbFloodZones] = useState(null);
   const [loadingFlood, setLoadingFlood] = useState(false);
   const [gpsCenter, setGpsCenter] = useState(null);
+  const [isFollowing, setIsFollowing] = useState(false);
   const { selectedVehicle } = useVehicleStore();
 
   // Start GPS tracking (feeds locationStore → CurrentLocation marker on map)
@@ -313,8 +325,15 @@ export default function Navigation() {
             {isCalculating ? 'Calculating...' : 'Find Safe Route'}
           </button>
           {error && <div className="bg-red-50 border border-red-200 rounded-lg p-2 text-xs text-red-700">{error}</div>}
-          {routes.length > 0 && <button onClick={() => { setRoutes([]); setError(null); }} className="btn-secondary w-full text-sm"><RotateCcw className="w-4 h-4 inline mr-1" />Clear</button>}
+          {routes.length > 0 && <button onClick={() => { setRoutes([]); setError(null); setIsFollowing(false); }} className="btn-secondary w-full text-sm"><RotateCcw className="w-4 h-4 inline mr-1" />Clear</button>}
           {routes.length > 0 && <div className="space-y-2">{routes.map((route, idx) => (<button key={idx} onClick={() => setSelectedRouteIndex(idx)} className={`w-full text-left p-3 rounded-lg border-2 text-xs ${idx === selectedRouteIndex ? 'border-purple-500 bg-purple-50' : 'border-gray-200'}`}><div className="flex justify-between"><span className="font-semibold" style={{color:ROUTE_COLORS[idx]}}>Route {idx+1}</span><span>{Math.round(route.risk_score*100)}%</span></div><div className="flex gap-3 mt-1 text-gray-600"><span>{(route.total_distance_m/1000).toFixed(1)}km</span><span>{Math.round(route.estimated_time_s/60)}min</span><span>{route.flooded_segments} flooded</span></div></button>))}</div>}
+          {/* Start Navigation / Follow Me */}
+          {routes.length > 0 && (
+            <button onClick={() => setIsFollowing(!isFollowing)} className={`w-full flex items-center justify-center gap-2 py-3 rounded-lg font-semibold text-sm transition-all ${isFollowing ? 'bg-green-600 text-white shadow-lg animate-pulse' : 'bg-green-50 text-green-700 border-2 border-green-300 hover:bg-green-100'}`}>
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+              {isFollowing ? 'Following You (Tap to Stop)' : 'Start Navigation (Follow Me)'}
+            </button>
+          )}
           {selectMode && <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-2 text-xs text-yellow-800 animate-pulse">Click map for <b>{selectMode}</b> <button onClick={() => setSelectMode(null)} className="ml-2 underline">Cancel</button></div>}
         </div>
         {/* Map */}
@@ -325,6 +344,7 @@ export default function Navigation() {
               <MapClickHandler onClick={handleMapClick} />
               {cityBounds[place] && <FitBounds bounds={cityBounds[place]} />}
               <FlyToGPS gpsCenter={gpsCenter} />
+              <FollowGPS isFollowing={isFollowing} gpsLocation={gpsLocation} />
               {cityPolygons[place] && <Polygon positions={cityPolygons[place]} pathOptions={{color: '#6366f1', weight: 2, fillOpacity: 0.02, dashArray: '8 4'}} />}
               {hasOrigin && <Marker position={[parseFloat(originLat), parseFloat(originLon)]} icon={originIcon}><Popup><b>Origin (A)</b></Popup></Marker>}
               {hasDest && <Marker position={[parseFloat(destLat), parseFloat(destLon)]} icon={destIcon}><Popup><b>Destination (B)</b></Popup></Marker>}
