@@ -23,6 +23,7 @@ from api.chat import router as chat_router
 from api.flood import router as flood_router
 from api.analytics import router as analytics_router
 from api.health import router as health_router
+from api.auth import router as auth_router
 
 
 # ============================================================================
@@ -148,6 +149,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 # ============================================================================
 
 app.include_router(health_router)
+app.include_router(auth_router, prefix="/api/v1")
 app.include_router(navigation_router, prefix="/api/v1")
 app.include_router(chat_router, prefix="/api/v1")
 app.include_router(flood_router, prefix="/api/v1")
