@@ -82,6 +82,18 @@ function FitBounds({ bounds }) {
   return null;
 }
 
+function FlyToGPS({ gpsCenter }) {
+  const map = useMap();
+  const [hasMoved, setHasMoved] = React.useState(false);
+  React.useEffect(() => {
+    if (gpsCenter && !hasMoved) {
+      map.flyTo(gpsCenter, 13, { duration: 1.5 });
+      setHasMoved(true);
+    }
+  }, [gpsCenter]);
+  return null;
+}
+
 export default function Navigation() {
   const [originLat, setOriginLat] = useState('');
   const [originLon, setOriginLon] = useState('');
@@ -258,12 +270,23 @@ export default function Navigation() {
               <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap" />
               <MapClickHandler onClick={handleMapClick} />
               {cityBounds[place] && <FitBounds bounds={cityBounds[place]} />}
+              <FlyToGPS gpsCenter={gpsCenter} />
               {cityPolygons[place] && <Polygon positions={cityPolygons[place]} pathOptions={{color: '#6366f1', weight: 2, fillOpacity: 0.02, dashArray: '8 4'}} />}
               {hasOrigin && <Marker position={[parseFloat(originLat), parseFloat(originLon)]} icon={originIcon}><Popup><b>Origin (A)</b></Popup></Marker>}
               {hasDest && <Marker position={[parseFloat(destLat), parseFloat(destLon)]} icon={destIcon}><Popup><b>Destination (B)</b></Popup></Marker>}
               {routes.map((route, idx) => route.coordinates?.length > 0 && <Polyline key={idx} positions={route.coordinates} pathOptions={{color:ROUTE_COLORS[idx%3],weight:idx===selectedRouteIndex?6:3,opacity:idx===selectedRouteIndex?1:0.4,dashArray:idx===selectedRouteIndex?null:'8 6'}} />)}
               {dbFloodZones?.features?.length > 0 && <GeoJSON key={JSON.stringify(dbFloodZones)} data={dbFloodZones} style={(f) => ({fillColor: f.properties.max_depth > 1 ? '#ef4444' : f.properties.max_depth > 0.5 ? '#f97316' : '#3b82f6', color: '#1e40af', fillOpacity: 0.4, weight: 2})} onEachFeature={(f, layer) => layer.bindPopup(`<b>${f.properties.event_name||'Flood'}</b><br/>Depth: ${f.properties.max_depth}m<br/>Area: ${f.properties.area_km2} km2`)} />}
             </MapContainer>
+          </div>
+          {/* Map Legend */}
+          <div className="mt-2 flex flex-wrap gap-3 text-[10px] text-gray-600 px-2">
+            <span className="flex items-center gap-1"><span className="w-3 h-1 bg-[#9B30FF] rounded inline-block"></span> Best Route</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-1 bg-[#FF6600] rounded inline-block"></span> Alt Route</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-1 bg-black rounded inline-block"></span> Alt Route 2</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 bg-blue-500/30 border border-blue-500 rounded-sm inline-block"></span> Flood Zone</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 bg-green-500 rounded-full inline-block border border-white"></span> Origin</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 bg-red-500 rounded-full inline-block border border-white"></span> Destination</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-1 border border-indigo-400 border-dashed rounded inline-block"></span> City Boundary</span>
           </div>
           {routes[selectedRouteIndex] && <div className="mt-4 card p-4"><h3 className="text-sm font-semibold mb-2" style={{color:ROUTE_COLORS[selectedRouteIndex]}}>Route {selectedRouteIndex+1}</h3><div className="grid grid-cols-4 gap-3 text-center text-sm"><div className="bg-gray-50 p-2 rounded"><p className="font-bold">{(routes[selectedRouteIndex].total_distance_m/1000).toFixed(1)}km</p><p className="text-[10px] text-gray-500">Distance</p></div><div className="bg-gray-50 p-2 rounded"><p className="font-bold">{Math.round(routes[selectedRouteIndex].estimated_time_s/60)}min</p><p className="text-[10px] text-gray-500">Time</p></div><div className="bg-gray-50 p-2 rounded"><p className="font-bold">{Math.round(routes[selectedRouteIndex].risk_score*100)}%</p><p className="text-[10px] text-gray-500">Risk</p></div><div className="bg-gray-50 p-2 rounded"><p className="font-bold">{routes[selectedRouteIndex].flooded_segments}</p><p className="text-[10px] text-gray-500">Flooded</p></div></div></div>}
         </div>
