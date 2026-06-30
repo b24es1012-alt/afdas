@@ -88,3 +88,48 @@ class GraphBuilder:
         )
 
         return G, G_simple, edges_gdf
+
+    def _annotate_flood(
+        self,
+        edges_gdf: gpd.GeoDataFrame,
+        flood_gdf: gpd.GeoDataFrame,
+    ) -> gpd.GeoDataFrame:
+        """
+        Annotate road edges with flood level via spatial join.
+        """
+        # Ensure matching CRS
+        if flood_gdf.crs != edges_gdf.crs:
+            flood_gdf = flood_gdf.to_crs(edges_gdf.crs)
+
+        # Detect depth column
+        depth_col = next(
+            (c for c in flood_gdf.columns if "depth" in c.lower()), None
+        )
+
+        # Spatial join
+        joined = gpd.sjoin(
+            edges_gdf,
+            flood_gdf[["geometry"] + ([depth_col] if depth_col else [])],
+            how="left",
+            predicate="intersects",
+        )
+
+        # Assign flood_level
+        if depth_col and depth_col in joined.columns:
+            joined["flood_level"] = joined[depth_col].fillna(0)
+        else:
+            joined["flood_level"] = joined["index_right"].notnull().astype(float)
+
+        # Remove index_right before groupby
+        if "index_right" in joined.columns:
+            joined = joined.drop(columns=["index_right"])
+
+        # Collapse duplicates (keep max flood per edge)
+        agg_dict = {col: "first" for col in joined.columns if col != "flood_level"}
+        agg_dict["flood_level"] = "max"
+        edges_gdf = joined.groupby(level=[0, 1, 2]).agg(agg_dict)
+
+        flooded_count = (edges_gdf["flood_level"] > 0).sum()
+        logger.info(f"Flood annotation: {flooded_count} edges flooded out of {len(edges_gdf)}")
+
+        return edges_gdf
