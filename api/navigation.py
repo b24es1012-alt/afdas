@@ -32,6 +32,7 @@ class RouteRequest(BaseModel):
     k: int = Field(default=3, ge=1, le=5)
     place: str = Field(default="Gujrat, Punjab, Pakistan")
     event_id: Optional[str] = None
+    custom_clearance: Optional[float] = Field(default=None, description="Custom max flood depth in meters (overrides vehicle default)")
 
 
 class RerouteRequest(BaseModel):
@@ -135,6 +136,14 @@ async def calculate_route(
             logger.warning(f"Could not load flood data: {flood_err}")
 
         service = _get_routing_service()
+        
+        # If custom clearance, override vehicle profile temporarily
+        if request.custom_clearance is not None:
+            from models.vehicle import VehicleProfile, get_vehicle_profile
+            vehicle_profile = get_vehicle_profile(request.vehicle_type)
+            vehicle_profile = vehicle_profile.model_copy(update={"max_flood_depth": request.custom_clearance})
+            logger.info(f"Using custom clearance: {request.custom_clearance}m (vehicle: {request.vehicle_type})")
+
         routes = await service.find_routes(
             start_lat=request.start_lat,
             start_lon=request.start_lon,
