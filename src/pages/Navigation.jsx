@@ -167,7 +167,7 @@ export default function Navigation() {
     else if (selectMode === 'destination') { setDestLat(latlng.lat.toFixed(5)); setDestLon(latlng.lng.toFixed(5)); setDestName(`${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)}`); setSelectMode(null); }
   };
 
-  const useGPS = () => { navigator.geolocation?.getCurrentPosition((pos) => { setOriginLat(pos.coords.latitude.toFixed(5)); setOriginLon(pos.coords.longitude.toFixed(5)); setOriginName('My Location'); }, () => setError('GPS denied')); };
+  const setOriginFromGPS = () => { navigator.geolocation?.getCurrentPosition((pos) => { setOriginLat(pos.coords.latitude.toFixed(5)); setOriginLon(pos.coords.longitude.toFixed(5)); setOriginName('My Location'); }, () => setError('GPS denied')); };
 
   // Geocode: search place name → get coordinates
   const geocodePlace = async (query, type) => {
@@ -232,7 +232,7 @@ export default function Navigation() {
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs font-semibold text-green-700">ORIGIN (A)</label>
               <div className="flex gap-2">
-                <button onClick={useGPS} className="text-[10px] px-2 py-0.5 bg-blue-50 text-blue-600 rounded">GPS</button>
+                <button onClick={setOriginFromGPS} className="text-[10px] px-2 py-0.5 bg-blue-50 text-blue-600 rounded">GPS</button>
                 <button onClick={() => setSelectMode('origin')} className={`text-[10px] px-2 py-0.5 rounded ${selectMode === 'origin' ? 'bg-green-600 text-white' : 'bg-green-50 text-green-600'}`}>{selectMode === 'origin' ? 'Clicking...' : 'Pick Map'}</button>
               </div>
             </div>
