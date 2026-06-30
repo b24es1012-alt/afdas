@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Loader2, RotateCcw, Navigation as NavIcon, Droplets } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, Polyline, Popup, useMapEvents, GeoJSON } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Polyline, Popup, useMapEvents, GeoJSON, Rectangle, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import VehicleSelector from '../components/navigation/VehicleSelector';
 import { useVehicleStore } from '../store/vehicleStore';
@@ -13,7 +13,22 @@ const destIcon = L.divIcon({ className: '', html: '<div style="background:#ef444
 const cityPresets = [{ name: 'Delhi', place: 'New Delhi, India' }, { name: 'Gujrat PK', place: 'Gujrat, Punjab, Pakistan' }, { name: 'Mumbai', place: 'Mumbai, India' }, { name: 'Lahore', place: 'Lahore, Pakistan' }, { name: 'Chennai', place: 'Chennai, India' }];
 const mapCenters = { 'New Delhi, India': [28.63, 77.22], 'Mumbai, India': [19.07, 72.87], 'Chennai, India': [13.08, 80.27], 'Gujrat, Punjab, Pakistan': [32.57, 73.67], 'Lahore, Pakistan': [31.52, 74.35] };
 
+// City bounding boxes [south, west, north, east]
+const cityBounds = {
+  'New Delhi, India': [[28.40, 76.84], [28.88, 77.35]],
+  'Mumbai, India': [[18.89, 72.77], [19.27, 72.98]],
+  'Chennai, India': [[12.83, 80.10], [13.23, 80.33]],
+  'Gujrat, Punjab, Pakistan': [[32.50, 73.60], [32.65, 73.80]],
+  'Lahore, Pakistan': [[31.35, 74.20], [31.65, 74.45]],
+};
+
 function MapClickHandler({ onClick }) { useMapEvents({ click: (e) => onClick(e.latlng) }); return null; }
+
+function FitBounds({ bounds }) {
+  const map = useMap();
+  if (bounds) { map.fitBounds(bounds, { padding: [20, 20] }); }
+  return null;
+}
 
 export default function Navigation() {
   const [originLat, setOriginLat] = useState('');
@@ -126,6 +141,8 @@ export default function Navigation() {
             <MapContainer center={getMapCenter()} zoom={12} className="w-full h-full" scrollWheelZoom={true}>
               <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap" />
               <MapClickHandler onClick={handleMapClick} />
+              {cityBounds[place] && <FitBounds bounds={cityBounds[place]} />}
+              {cityBounds[place] && <Rectangle bounds={cityBounds[place]} pathOptions={{color: '#6366f1', weight: 2, fillOpacity: 0.03, dashArray: '6 4'}} />}
               {hasOrigin && <Marker position={[parseFloat(originLat), parseFloat(originLon)]} icon={originIcon}><Popup><b>Origin (A)</b></Popup></Marker>}
               {hasDest && <Marker position={[parseFloat(destLat), parseFloat(destLon)]} icon={destIcon}><Popup><b>Destination (B)</b></Popup></Marker>}
               {routes.map((route, idx) => route.coordinates?.length > 0 && <Polyline key={idx} positions={route.coordinates} pathOptions={{color:ROUTE_COLORS[idx%3],weight:idx===selectedRouteIndex?6:3,opacity:idx===selectedRouteIndex?1:0.4,dashArray:idx===selectedRouteIndex?null:'8 6'}} />)}
