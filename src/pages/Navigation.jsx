@@ -117,7 +117,19 @@ export default function Navigation() {
     setIsCalculating(true); setError(null); setRoutes([]);
     try {
       const res = await axios.post(`${API_URL}/navigation/route`, { start_lat: parseFloat(originLat), start_lon: parseFloat(originLon), end_lat: parseFloat(destLat), end_lon: parseFloat(destLon), vehicle_type: selectedVehicle, k: 3, place, event_id: null });
-      if (res.data.success && res.data.routes.length > 0) { setRoutes(res.data.routes); setSelectedRouteIndex(0); }
+      if (res.data.success && res.data.routes.length > 0) { 
+        // Add origin and destination as first/last points so line connects to markers
+        const fixedRoutes = res.data.routes.map(route => {
+          const coords = route.coordinates || [];
+          if (coords.length > 0) {
+            const startPt = [parseFloat(originLat), parseFloat(originLon)];
+            const endPt = [parseFloat(destLat), parseFloat(destLon)];
+            return { ...route, coordinates: [startPt, ...coords, endPt] };
+          }
+          return route;
+        });
+        setRoutes(fixedRoutes); setSelectedRouteIndex(0); 
+      }
       else { setError(res.data.message || 'No routes found'); }
     } catch (err) { setError(err.response?.data?.detail || err.message || 'Failed'); }
     finally { setIsCalculating(false); }
