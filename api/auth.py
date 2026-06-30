@@ -1,27 +1,28 @@
 """
 Authentication API endpoints — login, register, refresh token.
+Uses PostgreSQL for persistent user storage.
 """
 
-from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, Field, EmailStr
+from fastapi import APIRouter, HTTPException, status, Depends
+from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
 import hashlib
 
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
+
 from auth.jwt import create_token_pair, verify_token
+from database.connection import get_db
 from utils.logger import api_logger as logger
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
-# ── In-memory user store (replace with PostgreSQL in production) ──────────────
-# This allows testing without a database connection
-_users_db = {}  # email → { id, email, password_hash, full_name, role, created_at }
-_user_counter = 0
-
+# ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _hash_password(password: str) -> str:
-    """Simple hash for demo. Use bcrypt/passlib in production."""
+    """Hash password. Use bcrypt in production."""
     return hashlib.sha256(password.encode()).hexdigest()
 
 
@@ -57,36 +58,43 @@ class AuthResponse(BaseModel):
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
 @router.post("/register", response_model=AuthResponse)
-async def register(request: RegisterRequest):
-    """Register a new user account."""
-    global _user_counter
+async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db)):
+    """Register a new user account. Saves to PostgreSQL."""
+
+    email = request.email.lower().strip()
 
     # Check if email already exists
-    if request.email.lower() in _users_db:
+    result = await db.execute(
+        text("SELECT id FROM users WHERE email = :email"),
+        {"email": email},
+    )
+    if result.fetchone():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered",
         )
 
-    # Create user
-    _user_counter += 1
-    user_id = _user_counter
+    # Insert user into database
+    result = await db.execute(
+        text("""
+            INSERT INTO users (email, password_hash, full_name, role, is_active, created_at)
+            VALUES (:email, :password_hash, :full_name, 'user', TRUE, NOW())
+            RETURNING id
+        """),
+        {
+            "email": email,
+            "password_hash": _hash_password(request.password),
+            "full_name": request.full_name or email.split("@")[0],
+        },
+    )
+    user_id = result.scalar_one()
+    await db.commit()
 
-    user = {
-        "id": user_id,
-        "email": request.email.lower(),
-        "password_hash": _hash_password(request.password),
-        "full_name": request.full_name or request.email.split("@")[0],
-        "role": "user",
-        "is_active": True,
-        "created_at": datetime.utcnow().isoformat(),
-    }
-
-    _users_db[request.email.lower()] = user
-    logger.info(f"User registered: {request.email} (id={user_id})")
+    logger.info(f"User registered: {email} (id={user_id})")
 
     # Generate tokens
-    tokens = create_token_pair(user_id, user["email"], user["role"])
+    full_name = request.full_name or email.split("@")[0]
+    tokens = create_token_pair(user_id, email, "user")
 
     return AuthResponse(
         access_token=tokens.access_token,
@@ -95,25 +103,36 @@ async def register(request: RegisterRequest):
         expires_in=tokens.expires_in,
         user={
             "id": user_id,
-            "email": user["email"],
-            "full_name": user["full_name"],
-            "role": user["role"],
+            "email": email,
+            "full_name": full_name,
+            "role": "user",
         },
     )
 
 
 @router.post("/login", response_model=AuthResponse)
-async def login(request: LoginRequest):
-    """Login with email and password."""
-    email = request.email.lower()
+async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
+    """Login with email and password. Reads from PostgreSQL."""
+
+    email = request.email.lower().strip()
 
     # Find user
-    user = _users_db.get(email)
-    if not user:
+    result = await db.execute(
+        text("""
+            SELECT id, email, password_hash, full_name, role, is_active
+            FROM users WHERE email = :email
+        """),
+        {"email": email},
+    )
+    row = result.fetchone()
+
+    if not row:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
+
+    user = dict(row._mapping)
 
     # Verify password
     if not _verify_password(request.password, user["password_hash"]):
@@ -128,6 +147,13 @@ async def login(request: LoginRequest):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is deactivated",
         )
+
+    # Update last_login
+    await db.execute(
+        text("UPDATE users SET last_login = NOW() WHERE id = :id"),
+        {"id": user["id"]},
+    )
+    await db.commit()
 
     logger.info(f"User logged in: {email}")
 
@@ -149,8 +175,9 @@ async def login(request: LoginRequest):
 
 
 @router.post("/refresh")
-async def refresh_token(request: RefreshRequest):
+async def refresh_token(request: RefreshRequest, db: AsyncSession = Depends(get_db)):
     """Get a new access token using a refresh token."""
+
     payload = verify_token(request.refresh_token)
 
     if not payload:
@@ -167,13 +194,20 @@ async def refresh_token(request: RefreshRequest):
 
     user_id = int(payload["sub"])
 
-    # Find user by ID
-    user = next((u for u in _users_db.values() if u["id"] == user_id), None)
-    if not user:
+    # Find user in database
+    result = await db.execute(
+        text("SELECT id, email, full_name, role FROM users WHERE id = :id AND is_active = TRUE"),
+        {"id": user_id},
+    )
+    row = result.fetchone()
+
+    if not row:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
         )
+
+    user = dict(row._mapping)
 
     # Generate new tokens
     tokens = create_token_pair(user["id"], user["email"], user["role"])
@@ -186,9 +220,13 @@ async def refresh_token(request: RefreshRequest):
     }
 
 
-@router.get("/me")
-async def get_current_user_info():
-    """Get current user info (requires auth header)."""
-    # This would normally use Depends(require_auth)
-    # For now, return info about the endpoint
-    return {"message": "Send Authorization: Bearer <token> header to get user info"}
+@router.get("/users")
+async def list_users(db: AsyncSession = Depends(get_db)):
+    """List all registered users (for debugging/admin)."""
+
+    result = await db.execute(
+        text("SELECT id, email, full_name, role, is_active, created_at, last_login FROM users ORDER BY id")
+    )
+    users = [dict(row._mapping) for row in result.fetchall()]
+
+    return {"users": users, "count": len(users)}
