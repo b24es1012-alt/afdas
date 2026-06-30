@@ -94,6 +94,16 @@ export default function Navigation() {
   const [loadingFlood, setLoadingFlood] = useState(false);
   const { selectedVehicle } = useVehicleStore();
 
+  // Search states
+  const [originSearch, setOriginSearch] = useState('');
+  const [destSearch, setDestSearch] = useState('');
+  const [searchingOrigin, setSearchingOrigin] = useState(false);
+  const [searchingDest, setSearchingDest] = useState(false);
+
+  // Custom vehicle clearance
+  const [useCustomClearance, setUseCustomClearance] = useState(false);
+  const [customClearance, setCustomClearance] = useState('0.30');
+
   const hasOrigin = originLat !== '' && originLon !== '' && !isNaN(parseFloat(originLat)) && !isNaN(parseFloat(originLon));
   const hasDest = destLat !== '' && destLon !== '' && !isNaN(parseFloat(destLat)) && !isNaN(parseFloat(destLon));
   const getMapCenter = () => { if (hasOrigin) return [parseFloat(originLat), parseFloat(originLon)]; return mapCenters[place] || [28.63, 77.22]; };
@@ -104,6 +114,23 @@ export default function Navigation() {
   };
 
   const useGPS = () => { navigator.geolocation?.getCurrentPosition((pos) => { setOriginLat(pos.coords.latitude.toFixed(5)); setOriginLon(pos.coords.longitude.toFixed(5)); setOriginName('My Location'); }, () => setError('GPS denied')); };
+
+  // Geocode: search place name → get coordinates
+  const geocodePlace = async (query, type) => {
+    if (!query.trim()) return;
+    const isOrigin = type === 'origin';
+    isOrigin ? setSearchingOrigin(true) : setSearchingDest(true);
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`, { headers: { 'User-Agent': 'AFDAS/1.0' } });
+      const data = await res.json();
+      if (data.length > 0) {
+        const { lat, lon, display_name } = data[0];
+        if (isOrigin) { setOriginLat(parseFloat(lat).toFixed(5)); setOriginLon(parseFloat(lon).toFixed(5)); setOriginName(display_name.split(',').slice(0, 2).join(',')); }
+        else { setDestLat(parseFloat(lat).toFixed(5)); setDestLon(parseFloat(lon).toFixed(5)); setDestName(display_name.split(',').slice(0, 2).join(',')); }
+      } else { setError(`"${query}" not found. Try a more specific name.`); }
+    } catch (err) { setError('Geocoding failed'); }
+    finally { isOrigin ? setSearchingOrigin(false) : setSearchingDest(false); }
+  };
 
   const loadFloodZones = async () => {
     setLoadingFlood(true);
@@ -116,7 +143,7 @@ export default function Navigation() {
     if (!hasOrigin || !hasDest) { setError('Set both origin and destination'); return; }
     setIsCalculating(true); setError(null); setRoutes([]);
     try {
-      const res = await axios.post(`${API_URL}/navigation/route`, { start_lat: parseFloat(originLat), start_lon: parseFloat(originLon), end_lat: parseFloat(destLat), end_lon: parseFloat(destLon), vehicle_type: selectedVehicle, k: 3, place, event_id: null });
+      const res = await axios.post(`${API_URL}/navigation/route`, { start_lat: parseFloat(originLat), start_lon: parseFloat(originLon), end_lat: parseFloat(destLat), end_lon: parseFloat(destLon), vehicle_type: selectedVehicle, k: 3, place, event_id: null, custom_clearance: useCustomClearance ? parseFloat(customClearance) : null });
       if (res.data.success && res.data.routes.length > 0) { 
         // Add origin and destination as first/last points so line connects to markers
         const fixedRoutes = res.data.routes.map(route => {
@@ -155,6 +182,7 @@ export default function Navigation() {
                 <button onClick={() => setSelectMode('origin')} className={`text-[10px] px-2 py-0.5 rounded ${selectMode === 'origin' ? 'bg-green-600 text-white' : 'bg-green-50 text-green-600'}`}>{selectMode === 'origin' ? 'Clicking...' : 'Pick Map'}</button>
               </div>
             </div>
+            <div className="flex gap-1 mb-2"><input type="text" value={originSearch} onChange={(e) => setOriginSearch(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && geocodePlace(originSearch, 'origin')} className="input-field text-xs py-1.5 flex-1" placeholder="Search: India Gate, AIIMS..." /><button onClick={() => geocodePlace(originSearch, 'origin')} disabled={searchingOrigin} className="text-[10px] px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50">{searchingOrigin ? '...' : 'Find'}</button></div>
             <div className="grid grid-cols-2 gap-2">
               <input type="text" value={originLat} onChange={(e) => setOriginLat(e.target.value)} className="input-field text-xs py-1.5" placeholder="Latitude" />
               <input type="text" value={originLon} onChange={(e) => setOriginLon(e.target.value)} className="input-field text-xs py-1.5" placeholder="Longitude" />
@@ -167,6 +195,7 @@ export default function Navigation() {
               <label className="text-xs font-semibold text-red-700">DESTINATION (B)</label>
               <button onClick={() => setSelectMode('destination')} className={`text-[10px] px-2 py-0.5 rounded ${selectMode === 'destination' ? 'bg-red-600 text-white' : 'bg-red-50 text-red-600'}`}>{selectMode === 'destination' ? 'Clicking...' : 'Pick Map'}</button>
             </div>
+            <div className="flex gap-1 mb-2"><input type="text" value={destSearch} onChange={(e) => setDestSearch(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && geocodePlace(destSearch, 'destination')} className="input-field text-xs py-1.5 flex-1" placeholder="Search: Hospital, Station..." /><button onClick={() => geocodePlace(destSearch, 'destination')} disabled={searchingDest} className="text-[10px] px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-50">{searchingDest ? '...' : 'Find'}</button></div>
             <div className="grid grid-cols-2 gap-2">
               <input type="text" value={destLat} onChange={(e) => setDestLat(e.target.value)} className="input-field text-xs py-1.5" placeholder="Latitude" />
               <input type="text" value={destLon} onChange={(e) => setDestLon(e.target.value)} className="input-field text-xs py-1.5" placeholder="Longitude" />
@@ -175,6 +204,20 @@ export default function Navigation() {
           </div>
           {/* Vehicle */}
           <VehicleSelector />
+          {/* Custom Clearance */}
+          <div className="card p-3 border-l-4 border-orange-400">
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-semibold text-orange-700">CUSTOM CLEARANCE</label>
+              <button onClick={() => setUseCustomClearance(!useCustomClearance)} className={`text-[10px] px-2 py-0.5 rounded ${useCustomClearance ? 'bg-orange-500 text-white' : 'bg-orange-50 text-orange-600'}`}>{useCustomClearance ? 'ON' : 'OFF'}</button>
+            </div>
+            {useCustomClearance && (
+              <div className="mt-2">
+                <label className="text-[10px] text-gray-500 block mb-1">Max water depth your vehicle can pass (meters)</label>
+                <input type="text" value={customClearance} onChange={(e) => setCustomClearance(e.target.value)} className="input-field text-xs py-1.5" placeholder="e.g. 0.45" />
+                <p className="text-[10px] text-gray-400 mt-1">Car: 0.30m | SUV: 0.50m | Truck: 0.70m</p>
+              </div>
+            )}
+          </div>
           {/* Flood */}
           <div className="card p-3 border-l-4 border-blue-500">
             <div className="flex items-center justify-between mb-1">
