@@ -123,6 +123,68 @@ async def get_flood_zones(
     return {"event_id": event_id, "zones": zones, "count": len(zones)}
 
 
+@router.get("/zones/geojson")
+async def get_flood_zones_geojson(
+    event_id: Optional[int] = Query(None, description="Flood event ID (omit for all active)"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get flood zones as GeoJSON FeatureCollection for map display.
+    If no event_id, returns all active flood zones.
+    """
+    from sqlalchemy import text
+
+    if event_id:
+        result = await db.execute(
+            text("""
+                SELECT fz.id, fz.event_id, fz.max_depth, fz.avg_depth, fz.area_km2,
+                       ST_AsGeoJSON(fz.geometry) as geojson,
+                       fe.event_name, fe.activation_id
+                FROM flood_zones fz
+                JOIN flood_events fe ON fe.id = fz.event_id
+                WHERE fz.event_id = :event_id
+            """),
+            {"event_id": event_id},
+        )
+    else:
+        result = await db.execute(
+            text("""
+                SELECT fz.id, fz.event_id, fz.max_depth, fz.avg_depth, fz.area_km2,
+                       ST_AsGeoJSON(fz.geometry) as geojson,
+                       fe.event_name, fe.activation_id
+                FROM flood_zones fz
+                JOIN flood_events fe ON fe.id = fz.event_id
+                WHERE fe.is_active = TRUE
+            """)
+        )
+
+    rows = result.fetchall()
+
+    import json
+    features = []
+    for row in rows:
+        r = dict(row._mapping)
+        features.append({
+            "type": "Feature",
+            "geometry": json.loads(r["geojson"]),
+            "properties": {
+                "id": r["id"],
+                "event_id": r["event_id"],
+                "event_name": r["event_name"],
+                "activation_id": r["activation_id"],
+                "max_depth": r["max_depth"],
+                "avg_depth": r["avg_depth"],
+                "area_km2": r["area_km2"],
+            }
+        })
+
+    return {
+        "type": "FeatureCollection",
+        "features": features,
+        "count": len(features),
+    }
+
+
 @router.post("/download")
 async def download_flood_data(
     request: DownloadFloodRequest,
