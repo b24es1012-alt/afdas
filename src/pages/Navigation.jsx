@@ -22,7 +22,12 @@ const cityBounds = {
   'Lahore, Pakistan': [[31.35, 74.20], [31.65, 74.45]],
 };
 
-function MapClickHandler({ onClick }) { useMapEvents({ click: (e) => onClick(e.latlng) }); return null; }
+function MapClickHandler({ onClick }) { 
+  const map = useMapEvents({ click: (e) => onClick(e.latlng) }); 
+  // Fix map size after render (prevents click offset)
+  setTimeout(() => map.invalidateSize(), 100);
+  return null; 
+}
 
 function FitBounds({ bounds }) {
   const map = useMap();
