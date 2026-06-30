@@ -19,7 +19,6 @@ ALL_TOOLS = [
     "check_amenity_flood_status",
     "check_vehicle_passability",
     "calculate_route",
-    "visualize_route",
     "optimize_flood_safe_route",
 ]
 
@@ -28,7 +27,6 @@ CATEGORY_TOOLS = {
     QueryCategory.FLOOD_NAVIGATION: {
         "get_coordinates_from_location",
         "calculate_route",
-        "visualize_route",
         "check_flood_depth",
         "assess_path_flood_risk",
     },
@@ -44,7 +42,6 @@ CATEGORY_TOOLS = {
         "check_amenity_flood_status",
         "check_vehicle_passability",
         "calculate_route",
-        "visualize_route",
     },
     QueryCategory.AMENITY_SEARCH: {
         "get_coordinates_from_location",
@@ -88,7 +85,6 @@ def select_tools(
     route_indicators = ["route", "path", "navigate", "go to", "reach", "drive"]
     if any(r in query_lower for r in route_indicators):
         tools.add("calculate_route")
-        tools.add("visualize_route")
 
     # Add vehicle check if passability question
     vehicle_indicators = ["can", "passable", "ambulance", "truck", "car"]
@@ -118,6 +114,5 @@ def get_tool_descriptions() -> dict:
         "check_amenity_flood_status": "Check which facilities are in flood zones",
         "check_vehicle_passability": "Check if a vehicle can pass given flood depth",
         "calculate_route": "Compute K flood-aware shortest routes on road network",
-        "visualize_route": "Generate interactive HTML map of routes",
         "optimize_flood_safe_route": "Find safest order for visiting multiple stops",
     }

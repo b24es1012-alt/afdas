@@ -227,6 +227,13 @@ async def calculate_route(
                 f"Risk: {route.risk_score:.2f} | "
                 f"{route.flooded_segments} flooded segments\n"
             )
+        
+        # Include first route coordinates for map display
+        if routes[0].coordinates:
+            coords_str = str(routes[0].coordinates[:5]) + "..." if len(routes[0].coordinates) > 5 else str(routes[0].coordinates)
+            lines.append(f"\nBest route coordinates (for map): {coords_str}")
+            lines.append(f"Total waypoints: {len(routes[0].coordinates)}")
+        
         return "\n".join(lines)
 
     except Exception as e:
@@ -451,6 +458,5 @@ def get_tools_map() -> dict:
         "check_amenity_flood_status": check_amenity_flood_status,
         "check_vehicle_passability": check_vehicle_passability,
         "calculate_route": calculate_route,
-        "visualize_route": visualize_route,
         "optimize_flood_safe_route": optimize_flood_safe_route,
     }

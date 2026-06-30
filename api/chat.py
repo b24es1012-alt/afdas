@@ -31,6 +31,7 @@ class ChatResponse(BaseModel):
     category: str
     vehicle_type: str
     steps_executed: int
+    routes: Optional[list] = None  # Route coordinates for map display
 
 
 # ── Endpoint ─────────────────────────────────────────────────────────────────
@@ -86,12 +87,23 @@ async def chat(
         if result["messages"]:
             final_message = result["messages"][-1].content
 
+        # Extract route coordinates from tool results (if calculate_route was called)
+        routes_data = None
+        from langchain_core.messages import ToolMessage
+        for msg in result["messages"]:
+            if isinstance(msg, ToolMessage) and msg.name == "calculate_route":
+                # The routing service stores results - try to get from the content
+                if "coordinates" in msg.content:
+                    routes_data = msg.content
+                break
+
         return ChatResponse(
             success=True,
             response=final_message,
             category=result.get("category", "unknown"),
             vehicle_type=result.get("vehicle_type", "car"),
             steps_executed=len(result.get("plan", [])),
+            routes=routes_data,
         )
 
     except Exception as e:
