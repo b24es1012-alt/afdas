@@ -4,6 +4,8 @@ import { MapContainer, TileLayer, Marker, Polyline, Popup, useMapEvents, GeoJSON
 import L from 'leaflet';
 import VehicleSelector from '../components/navigation/VehicleSelector';
 import { useVehicleStore } from '../store/vehicleStore';
+import { useGPS } from '../hooks/useGPS';
+import CurrentLocation from '../components/map/CurrentLocation';
 import axios from 'axios';
 
 const API_URL = 'http://localhost:8000/api/v1';
@@ -112,17 +114,19 @@ export default function Navigation() {
   const [gpsCenter, setGpsCenter] = useState(null);
   const { selectedVehicle } = useVehicleStore();
 
-  // Try to get GPS location for initial map center AND auto-detect city
-  React.useEffect(() => {
-    navigator.geolocation?.getCurrentPosition(
-      async (pos) => {
-        const { latitude, longitude } = pos.coords;
-        setGpsCenter([latitude, longitude]);
+  // Start GPS tracking (feeds locationStore → CurrentLocation marker on map)
+  const { location: gpsLocation } = useGPS(true);
 
-        // Reverse geocode GPS to detect user's city
+  // When GPS location updates, set gpsCenter for map + auto-detect city
+  React.useEffect(() => {
+    if (gpsLocation && !gpsCenter) {
+      setGpsCenter([gpsLocation.lat, gpsLocation.lon]);
+
+      // Reverse geocode GPS to detect user's city
+      (async () => {
         try {
           const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&zoom=10`,
+            `https://nominatim.openstreetmap.org/reverse?lat=${gpsLocation.lat}&lon=${gpsLocation.lon}&format=json&zoom=10`,
             { headers: { 'User-Agent': 'AFDAS/1.0' } }
           );
           const data = await res.json();
@@ -137,14 +141,12 @@ export default function Navigation() {
           if (matched) {
             setPlace(matched.place);
           }
-          // If no match, keep default 'New Delhi, India'
         } catch (err) {
           // Geocoding failed silently — keep Delhi default
         }
-      },
-      () => {} // GPS denied — keep Delhi as default
-    );
-  }, []);
+      })();
+    }
+  }, [gpsLocation]);
 
   // Search states
   const [originSearch, setOriginSearch] = useState('');
@@ -302,6 +304,8 @@ export default function Navigation() {
               {hasDest && <Marker position={[parseFloat(destLat), parseFloat(destLon)]} icon={destIcon}><Popup><b>Destination (B)</b></Popup></Marker>}
               {routes.map((route, idx) => route.coordinates?.length > 0 && <Polyline key={idx} positions={route.coordinates} pathOptions={{color:ROUTE_COLORS[idx%3],weight:idx===selectedRouteIndex?6:3,opacity:idx===selectedRouteIndex?1:0.4,dashArray:idx===selectedRouteIndex?null:'8 6'}} />)}
               {dbFloodZones?.features?.length > 0 && <GeoJSON key={JSON.stringify(dbFloodZones)} data={dbFloodZones} style={(f) => ({fillColor: f.properties.max_depth > 1 ? '#ef4444' : f.properties.max_depth > 0.5 ? '#f97316' : '#3b82f6', color: '#1e40af', fillOpacity: 0.4, weight: 2})} onEachFeature={(f, layer) => layer.bindPopup(`<b>${f.properties.event_name||'Flood'}</b><br/>Depth: ${f.properties.max_depth}m<br/>Area: ${f.properties.area_km2} km2`)} />}
+              {/* GPS location marker (pulsing blue dot + accuracy circle) */}
+              <CurrentLocation />
             </MapContainer>
           </div>
           {/* Map Legend */}
@@ -313,6 +317,7 @@ export default function Navigation() {
             <span className="flex items-center gap-1"><span className="w-3 h-3 bg-green-500 rounded-full inline-block border border-white"></span> Origin</span>
             <span className="flex items-center gap-1"><span className="w-3 h-3 bg-red-500 rounded-full inline-block border border-white"></span> Destination</span>
             <span className="flex items-center gap-1"><span className="w-3 h-1 border border-indigo-400 border-dashed rounded inline-block"></span> City Boundary</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 bg-blue-500 rounded-full inline-block border border-white animate-pulse"></span> Your Location</span>
           </div>
           {routes[selectedRouteIndex] && <div className="mt-4 card p-4"><h3 className="text-sm font-semibold mb-2" style={{color:ROUTE_COLORS[selectedRouteIndex]}}>Route {selectedRouteIndex+1}</h3><div className="grid grid-cols-4 gap-3 text-center text-sm"><div className="bg-gray-50 p-2 rounded"><p className="font-bold">{(routes[selectedRouteIndex].total_distance_m/1000).toFixed(1)}km</p><p className="text-[10px] text-gray-500">Distance</p></div><div className="bg-gray-50 p-2 rounded"><p className="font-bold">{Math.round(routes[selectedRouteIndex].estimated_time_s/60)}min</p><p className="text-[10px] text-gray-500">Time</p></div><div className="bg-gray-50 p-2 rounded"><p className="font-bold">{Math.round(routes[selectedRouteIndex].risk_score*100)}%</p><p className="text-[10px] text-gray-500">Risk</p></div><div className="bg-gray-50 p-2 rounded"><p className="font-bold">{routes[selectedRouteIndex].flooded_segments}</p><p className="text-[10px] text-gray-500">Flooded</p></div></div></div>}
         </div>
