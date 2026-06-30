@@ -31,7 +31,7 @@ class ChatResponse(BaseModel):
     category: str
     vehicle_type: str
     steps_executed: int
-    routes: Optional[str] = None  # Route info text from AI (if route was calculated)
+    routes: Optional[list] = None  # Structured route data for map display (list of route objects with coordinates)
 
 
 # ── Endpoint ─────────────────────────────────────────────────────────────────
@@ -71,9 +71,12 @@ async def chat(
 
     try:
         # Import tools map here to avoid circular imports
-        from agents.tools import get_tools_map
+        from agents.tools import get_tools_map, get_last_route_results, clear_last_route_results
 
         tools_map = get_tools_map()
+        
+        # Clear any previous route results before running agent
+        clear_last_route_results()
         
         # Add location context to the query if GPS provided
         query = request.message
@@ -90,15 +93,9 @@ async def chat(
         if result["messages"]:
             final_message = result["messages"][-1].content
 
-        # Extract route coordinates from tool results (if calculate_route was called)
-        routes_data = None
-        from langchain_core.messages import ToolMessage
-        for msg in result["messages"]:
-            if isinstance(msg, ToolMessage) and msg.name == "calculate_route":
-                # The routing service stores results - try to get from the content
-                if "coordinates" in msg.content:
-                    routes_data = msg.content
-                break
+        # Get structured route data if calculate_route was called
+        routes_data = get_last_route_results()
+        clear_last_route_results()
 
         return ChatResponse(
             success=True,
