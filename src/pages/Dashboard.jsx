@@ -57,6 +57,7 @@ export default function Dashboard() {
         <MapView
           floodZones={floodZones}
           center={location ? [location.lat, location.lon] : undefined}
+          zoom={location ? 15 : undefined}
           className="h-[400px]"
         />
       </div>

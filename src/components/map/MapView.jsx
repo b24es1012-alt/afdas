@@ -1,4 +1,5 @@
-import { MapContainer, TileLayer, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, useMapEvents, useMap } from 'react-leaflet';
+import { useEffect, useRef } from 'react';
 import settings from '../../config/settings';
 import CurrentLocation from './CurrentLocation';
 import FloodLayer from './FloodLayer';
@@ -30,6 +31,9 @@ export default function MapView({
       >
         <TileLayer url={settings.map.tileUrl} attribution={settings.map.tileAttribution} />
 
+        {/* Fly to center when GPS location arrives */}
+        <FlyToCenter center={center} zoom={mapZoom} />
+
         {/* Click handler */}
         {onMapClick && <MapClickHandler onClick={onMapClick} />}
 
@@ -52,6 +56,20 @@ export default function MapView({
       <Legend />
     </div>
   );
+}
+
+function FlyToCenter({ center, zoom }) {
+  const map = useMap();
+  const hasMoved = useRef(false);
+
+  useEffect(() => {
+    if (center && !hasMoved.current) {
+      map.flyTo(center, zoom || 14, { duration: 1.5 });
+      hasMoved.current = true;
+    }
+  }, [center]);
+
+  return null;
 }
 
 function MapClickHandler({ onClick }) {
