@@ -270,12 +270,12 @@ export default function Navigation() {
       </div>
 
       {/* AI Assistant Panel */}
-      <AIChatPanel />
+      <AIChatPanel gpsCenter={gpsCenter} />
     </div>
   );
 }
 
-function AIChatPanel() {
+function AIChatPanel({ gpsCenter }) {
   const [open, setOpen] = React.useState(false);
   const [messages, setMessages] = React.useState([{id:'1',role:'assistant',text:'Hi! I can help with flood info, safe routes, hospitals & more. Ask me anything!'}]);
   const [input, setInput] = React.useState('');
