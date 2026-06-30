@@ -3,8 +3,8 @@ const settings = {
   // Map defaults (New Delhi, India)
   map: {
     center: [
-      parseFloat(import.meta.env.VITE_MAP_CENTER_LAT) || 32.574,
-      parseFloat(import.meta.env.VITE_MAP_CENTER_LON) || 73.677,
+      parseFloat(import.meta.env.VITE_MAP_CENTER_LAT) || 28.6139,
+      parseFloat(import.meta.env.VITE_MAP_CENTER_LON) || 77.2090,
     ],
     zoom: parseInt(import.meta.env.VITE_MAP_ZOOM) || 13,
     maxZoom: 18,
