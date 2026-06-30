@@ -179,15 +179,36 @@ export default function Navigation() {
     if (!query.trim()) return;
     const isOrigin = type === 'origin';
     isOrigin ? setSearchingOrigin(true) : setSearchingDest(true);
+    setError(null);
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`, { headers: { 'User-Agent': 'AFDAS/1.0' } });
+      // Append city/place to query for better local results
+      const searchQuery = query.includes(',') ? query : `${query}, ${place}`;
+      
+      // Build URL with viewbox bias if we have city bounds
+      let url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(searchQuery)}&format=json&limit=5&addressdetails=1`;
+      const bounds = cityBounds[place];
+      if (bounds) {
+        // viewbox=left,top,right,bottom (lon_min, lat_max, lon_max, lat_min)
+        url += `&viewbox=${bounds[0][1]},${bounds[1][0]},${bounds[1][1]},${bounds[0][0]}&bounded=0`;
+      }
+
+      const res = await fetch(url, { headers: { 'User-Agent': 'AFDAS/1.0' } });
+      
+      if (!res.ok) {
+        setError(`Geocoding service returned ${res.status}. Try again.`);
+        return;
+      }
+      
       const data = await res.json();
       if (data.length > 0) {
         const { lat, lon, display_name } = data[0];
         if (isOrigin) { setOriginLat(parseFloat(lat).toFixed(5)); setOriginLon(parseFloat(lon).toFixed(5)); setOriginName(display_name.split(',').slice(0, 2).join(',')); }
         else { setDestLat(parseFloat(lat).toFixed(5)); setDestLon(parseFloat(lon).toFixed(5)); setDestName(display_name.split(',').slice(0, 2).join(',')); }
-      } else { setError(`"${query}" not found. Try a more specific name.`); }
-    } catch (err) { setError('Geocoding failed'); }
+      } else { setError(`"${query}" not found in ${place}. Try a more specific name or full address.`); }
+    } catch (err) { 
+      console.error('Geocoding error:', err);
+      setError(`Geocoding failed: ${err.message || 'Network error'}. Check internet connection.`); 
+    }
     finally { isOrigin ? setSearchingOrigin(false) : setSearchingDest(false); }
   };
 
