@@ -47,7 +47,7 @@ class OSMDownloader:
         Download the road network for a place as a NetworkX graph.
         
         Args:
-            place: Place name (e.g. "Gujrat, Punjab, Pakistan")
+            place: Place name (e.g. "New Delhi, India")
             network_type: 'drive', 'walk', 'bike', or 'all'
         
         Returns:
@@ -113,9 +113,9 @@ class OSMDownloader:
     async def geocode_location(
         self,
         location_name: str,
-        city: str = "Gujrat",
-        state: str = "Punjab",
-        country: str = "Pakistan",
+        city: str = "Delhi",
+        state: str = "Delhi",
+        country: str = "India",
         limit: int = 3,
     ) -> List[dict]:
         """
@@ -167,9 +167,9 @@ class OSMDownloader:
     async def search_amenities(
         self,
         amenity_type: str,
-        city: str = "Gujrat",
-        state: str = "Punjab",
-        country: str = "Pakistan",
+        city: str = "Delhi",
+        state: str = "Delhi",
+        country: str = "India",
         limit: int = 15,
     ) -> List[dict]:
         """
@@ -220,9 +220,9 @@ class OSMDownloader:
 
     async def get_city_bbox(
         self,
-        city: str = "Gujrat",
-        state: str = "Punjab",
-        country: str = "Pakistan",
+        city: str = "Delhi",
+        state: str = "Delhi",
+        country: str = "India",
     ) -> Optional[dict]:
         """
         Get the bounding box for a city.

@@ -93,7 +93,7 @@ class CopernicusPollingJob:
             event_id = await repo.create_flood_event(
                 activation_id=activation_id,
                 event_name=f"Flood {activation_id}",
-                country="Pakistan",  # TODO: Extract from metadata
+                country="India",  # TODO: Extract from metadata
                 region="Punjab",
                 start_date=datetime.utcnow(),
             )

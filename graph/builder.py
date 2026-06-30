@@ -43,7 +43,7 @@ class GraphBuilder:
         Build a flood-annotated road graph for a place.
         
         Args:
-            place: OSM place name (e.g. "Gujrat, Punjab, Pakistan")
+            place: OSM place name (e.g. "New Delhi, India")
             flood_shapefile: Path to flood shapefile (optional)
             flood_gdf: Pre-loaded flood GeoDataFrame (optional)
             network_type: OSM network type

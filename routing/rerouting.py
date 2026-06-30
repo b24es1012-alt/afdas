@@ -77,7 +77,7 @@ class ReroutingService:
         end_lat: float,
         end_lon: float,
         vehicle_type: str = "car",
-        place: str = "Gujrat, Punjab, Pakistan",
+        place: str = "New Delhi, India",
         flood_shapefile: Optional[str] = None,
         event_id: Optional[str] = None,
     ) -> List[RouteResult]:

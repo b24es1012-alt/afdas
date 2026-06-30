@@ -34,9 +34,9 @@ def _get_osm() -> OSMDownloader:
 @tool
 async def get_coordinates_from_location(
     location_name: str,
-    city: str = "Gujrat",
-    state: str = "Punjab",
-    country: str = "Pakistan",
+    city: str = "Delhi",
+    state: str = "Delhi",
+    country: str = "India",
 ) -> str:
     """
     Convert a location name (e.g. 'DHQ Hospital', 'Railway Station') to GPS coordinates.
@@ -44,9 +44,9 @@ async def get_coordinates_from_location(
 
     Args:
         location_name: Name of the location
-        city: City (default: Gujrat)
-        state: State (default: Punjab)
-        country: Country (default: Pakistan)
+        city: City (default: Delhi)
+        state: State (default: Delhi)
+        country: Country (default: India)
     """
     osm = _get_osm()
     results = await osm.geocode_location(location_name, city, state, country)
@@ -67,9 +67,9 @@ async def get_coordinates_from_location(
 @tool
 async def search_amenity(
     amenity: str,
-    city: str = "Gujrat",
-    state: str = "Punjab",
-    country: str = "Pakistan",
+    city: str = "Delhi",
+    state: str = "Delhi",
+    country: str = "India",
     limit: int = 10,
 ) -> str:
     """
@@ -77,9 +77,9 @@ async def search_amenity(
 
     Args:
         amenity: Type of amenity (e.g. 'hospital', 'school', 'pharmacy', 'shelter')
-        city: City (default: Gujrat)
-        state: State (default: Punjab)
-        country: Country (default: Pakistan)
+        city: City (default: Delhi)
+        state: State (default: Delhi)
+        country: Country (default: India)
         limit: Max results (default: 10)
     """
     osm = _get_osm()
@@ -236,18 +236,18 @@ async def calculate_route(
 @tool
 async def check_amenity_flood_status(
     amenity: str,
-    city: str = "Gujrat",
-    state: str = "Punjab",
-    country: str = "Pakistan",
+    city: str = "Delhi",
+    state: str = "Delhi",
+    country: str = "India",
 ) -> str:
     """
     Check which amenities (hospitals, schools, etc.) are in flood zones.
 
     Args:
         amenity: Type (e.g. 'hospital', 'school')
-        city: City (default: Gujrat)
-        state: State (default: Punjab)
-        country: Country (default: Pakistan)
+        city: City (default: Delhi)
+        state: State (default: Delhi)
+        country: Country (default: India)
     """
     from database.connection import DatabaseManager
     from database.flood_repository import FloodRepository
@@ -376,9 +376,9 @@ async def visualize_route(output_file: str = "graph.html") -> str:
 
 @tool
 async def get_city_bbox(
-    city: str = "Gujrat",
-    state: str = "Punjab",
-    country: str = "Pakistan",
+    city: str = "Delhi",
+    state: str = "Delhi",
+    country: str = "India",
 ) -> str:
     """
     Get bounding box coordinates for a city.

@@ -42,7 +42,7 @@ class BuildingParser:
         Download buildings/POIs for a place from OSM.
         
         Args:
-            place: Place name (e.g. "Gujrat, Punjab, Pakistan")
+            place: Place name (e.g. "New Delhi, India")
             building_type: Specific type or None for all
         
         Returns:

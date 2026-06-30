@@ -48,7 +48,7 @@ class DownloadFloodRequest(BaseModel):
     """Request to download new flood data from Copernicus EMS."""
     activation_id: str = Field(..., description="e.g. EMSR838")
     event_name: str
-    country: str = "Pakistan"
+    country: str = "India"
     region: str = "Punjab"
 
 

@@ -55,7 +55,7 @@ class RoutingService:
         end_lon: float,
         vehicle_type: str = "car",
         k: int = 3,
-        place: str = "Gujrat, Punjab, Pakistan",
+        place: str = "New Delhi, India",
         flood_shapefile: Optional[str] = None,
         flood_gdf: Optional[gpd.GeoDataFrame] = None,
         event_id: Optional[str] = None,

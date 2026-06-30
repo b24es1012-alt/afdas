@@ -37,7 +37,7 @@ class WeightBuilderJob:
 
     async def run(
         self,
-        place: str = "Gujrat, Punjab, Pakistan",
+        place: str = "New Delhi, India",
         flood_shapefile: str = None,
         event_id: str = None,
     ) -> dict:
@@ -78,7 +78,7 @@ class WeightBuilderJob:
 
     async def invalidate_and_rebuild(
         self,
-        place: str = "Gujrat, Punjab, Pakistan",
+        place: str = "New Delhi, India",
         flood_shapefile: str = None,
         event_id: str = None,
     ) -> dict:
