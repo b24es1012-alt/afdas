@@ -48,6 +48,10 @@ Flood data comes from real Copernicus EMS data loaded into PostGIS.
 
 User request: {initial_query}
 
+IMPORTANT: If the user's GPS coordinates are provided in the query (e.g. [User GPS: lat=..., lon=...]),
+use those coordinates directly in tools. The user is at THAT location, NOT in Delhi.
+Pass the user's actual city/state based on their GPS, not the default "Delhi".
+
 AVAILABLE TOOLS (only use these):
 {available_tools}
 

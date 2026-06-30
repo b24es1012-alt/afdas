@@ -31,6 +31,24 @@ def _get_osm() -> OSMDownloader:
 # TOOLS
 # ============================================================================
 
+async def _reverse_geocode_city(lat: float, lon: float) -> str:
+    """Get city name from coordinates using Nominatim reverse geocoding."""
+    import httpx
+    try:
+        async with httpx.AsyncClient() as client:
+            res = await client.get(
+                f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json&zoom=10",
+                headers={"User-Agent": "AFDAS/1.0"},
+                timeout=5.0,
+            )
+            data = res.json()
+            city = data.get("address", {}).get("city") or data.get("address", {}).get("state_district") or data.get("address", {}).get("state") or "Delhi"
+            state = data.get("address", {}).get("state", "")
+            country = data.get("address", {}).get("country", "India")
+            return city, state, country
+    except Exception:
+        return "Delhi", "Delhi", "India"
+
 @tool
 async def get_coordinates_from_location(
     location_name: str,

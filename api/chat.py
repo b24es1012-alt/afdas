@@ -78,7 +78,10 @@ async def chat(
         # Add location context to the query if GPS provided
         query = request.message
         if request.lat and request.lon:
-            query = f"{request.message}\n[User GPS: lat={request.lat}, lon={request.lon}]"
+            # Reverse geocode to get city name
+            from agents.tools import _reverse_geocode_city
+            city, state, country = await _reverse_geocode_city(request.lat, request.lon)
+            query = f"{request.message}\n[User GPS: lat={request.lat}, lon={request.lon}, city={city}, state={state}, country={country}]"
 
         result = await run_agent(query, tools_map)
 
