@@ -30,7 +30,7 @@ class RouteRequest(BaseModel):
     end_lon: float = Field(..., ge=-180, le=180)
     vehicle_type: str = Field(default="car")
     k: int = Field(default=3, ge=1, le=5)
-    place: str = Field(default="Gujrat, Punjab, Pakistan")
+    place: str = Field(default="New Delhi, India")
     event_id: Optional[str] = None
     custom_clearance: Optional[float] = Field(default=None, description="Custom max flood depth in meters (overrides vehicle default)")
 
@@ -42,7 +42,7 @@ class RerouteRequest(BaseModel):
     end_lat: float = Field(..., ge=-90, le=90)
     end_lon: float = Field(..., ge=-180, le=180)
     vehicle_type: str = Field(default="car")
-    place: str = Field(default="Gujrat, Punjab, Pakistan")
+    place: str = Field(default="New Delhi, India")
     event_id: Optional[str] = None
 
 
