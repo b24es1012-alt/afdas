@@ -34,7 +34,13 @@ function MapClickHandler({ onClick }) {
 
 function FitBounds({ bounds }) {
   const map = useMap();
-  if (bounds) { map.fitBounds(bounds, { padding: [20, 20] }); }
+  const [lastBounds, setLastBounds] = React.useState(null);
+  React.useEffect(() => {
+    if (bounds && JSON.stringify(bounds) !== JSON.stringify(lastBounds)) {
+      map.fitBounds(bounds, { padding: [20, 20] });
+      setLastBounds(bounds);
+    }
+  }, [bounds]);
   return null;
 }
 
