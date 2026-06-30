@@ -291,7 +291,7 @@ function AIChatPanel() {
     setInput('');
     setLoading(true);
     try {
-      const res = await axios.post(`${API_URL}/chat`, {message: userMsg.text});
+      const res = await axios.post(`${API_URL}/chat`, {message: userMsg.text, lat: gpsCenter?.[0] || null, lon: gpsCenter?.[1] || null});
       setMessages(prev => [...prev, {id:(Date.now()+1).toString(), role:'assistant', text: res.data.response || 'No response', category: res.data.category}]);
     } catch (err) {
       setMessages(prev => [...prev, {id:(Date.now()+1).toString(), role:'assistant', text: 'Error: ' + (err.response?.data?.detail || err.message), isError: true}]);
