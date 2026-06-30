@@ -59,7 +59,6 @@ GROUPING RULES:
 - Higher group = AFTER previous group finishes
 - get_coordinates_from_location MUST be group 1 if place names need resolving
 - calculate_route MUST be after coordinates are resolved
-- visualize_route MUST be after calculate_route
 
 OUTPUT — return ONLY valid JSON, no markdown fences:
 {{

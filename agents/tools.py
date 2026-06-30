@@ -371,17 +371,6 @@ async def assess_path_flood_risk(
 
 
 @tool
-async def visualize_route(output_file: str = "graph.html") -> str:
-    """
-    Generate interactive map visualization (placeholder - map served via frontend).
-
-    Args:
-        output_file: Output filename (default: graph.html)
-    """
-    return "Route visualization will be rendered on the frontend map using the route coordinates returned by calculate_route."
-
-
-@tool
 async def get_city_bbox(
     city: str = "Delhi",
     state: str = "Delhi",
