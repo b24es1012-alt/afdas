@@ -145,6 +145,39 @@ class RoutingService:
 
             except (nx.NetworkXNoPath, nx.NodeNotFound) as e:
                 logger.warning(f"Fallback failed: {e}")
+                # Last resort: try undirected graph (ignores one-way streets)
+                logger.info("Last resort: trying undirected graph...")
+                try:
+                    G_undirected = G_fallback.to_undirected()
+                    fallback_path = nx.shortest_path(G_undirected, source, target, weight="length")
+                    logger.info(f"Undirected path found: {len(fallback_path)} nodes")
+
+                    coordinates = []
+                    total_distance = 0.0
+                    flooded_segments = 0
+                    for node in fallback_path:
+                        lat = G.nodes[node].get("y", 0)
+                        lon = G.nodes[node].get("x", 0)
+                        coordinates.append((lat, lon))
+                    for u, v in zip(fallback_path[:-1], fallback_path[1:]):
+                        if G_undirected.has_edge(u, v):
+                            total_distance += G_undirected[u][v].get("length", 0)
+
+                    result = RouteResult(
+                        route_index=0,
+                        nodes=fallback_path,
+                        coordinates=coordinates,
+                        total_distance_m=round(total_distance, 1),
+                        estimated_time_s=round(total_distance / (vehicle.average_speed * 1000 / 3600), 1),
+                        flooded_segments=0,
+                        total_segments=len(fallback_path) - 1,
+                        risk_score=0.0,
+                        max_flood_depth=0.0,
+                    )
+                    logger.info(f"Undirected route: {total_distance:.0f}m")
+                    return [result]
+                except Exception as e2:
+                    logger.error(f"Undirected fallback also failed: {e2}")
             except Exception as e:
                 logger.error(f"Fallback error: {e}")
             return []
