@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Loader2, RotateCcw, MapPin, Navigation as NavIcon, Droplets, Plus, Trash2 } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, Polyline, Popup, Circle, useMapEvents, Polygon } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Polyline, Popup, Circle, useMapEvents, Polygon, GeoJSON } from 'react-leaflet';
 import L from 'leaflet';
 import VehicleSelector from '../components/navigation/VehicleSelector';
 import { useVehicleStore } from '../store/vehicleStore';
@@ -47,6 +47,10 @@ export default function Navigation() {
   const [floodRadius, setFloodRadius] = useState(1000); // meters
   const [floodDepth, setFloodDepth] = useState(0.8);
   const [selectFloodMode, setSelectFloodMode] = useState(false);
+
+  // Real flood zones from database
+  const [dbFloodZones, setDbFloodZones] = useState(null); // GeoJSON FeatureCollection
+  const [loadingFlood, setLoadingFlood] = useState(false);
 
   const { selectedVehicle } = useVehicleStore();
 
@@ -132,6 +136,22 @@ export default function Navigation() {
     );
   };
 
+  // Load flood zones from database
+  const loadFloodZones = async (eventId = null) => {
+    setLoadingFlood(true);
+    try {
+      const url = eventId
+        ? `${API_URL}/flood/zones/geojson?event_id=${eventId}`
+        : `${API_URL}/flood/zones/geojson`;
+      const res = await axios.get(url);
+      setDbFloodZones(res.data);
+    } catch (err) {
+      console.error('Failed to load flood zones:', err);
+    } finally {
+      setLoadingFlood(false);
+    }
+  };
+
   // City presets
   const cityPresets = [
     { name: 'Delhi', place: 'New Delhi, India', center: [28.63, 77.22] },
@@ -204,35 +224,52 @@ export default function Navigation() {
           <div className="card p-3 border-l-4 border-blue-500">
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs font-semibold text-blue-700 flex items-center gap-1">
-                <Droplets className="w-3 h-3" /> VIRTUAL FLOOD ZONE
+                <Droplets className="w-3 h-3" /> FLOOD ZONES
               </label>
-              <button onClick={() => { setFloodEnabled(!floodEnabled); if (floodEnabled) setFloodCenter(null); }} className={`text-[10px] px-2 py-0.5 rounded ${floodEnabled ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-600'}`}>
-                {floodEnabled ? 'ON' : 'OFF'}
+              <button onClick={() => loadFloodZones()} className={`text-[10px] px-2 py-0.5 rounded ${loadingFlood ? 'bg-gray-200 text-gray-500' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}>
+                {loadingFlood ? 'Loading...' : 'Load from DB'}
               </button>
             </div>
-            {floodEnabled && (
-              <div className="space-y-2">
-                <button onClick={() => setSelectFloodMode(true)} className={`text-xs w-full py-1.5 rounded ${selectFloodMode ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}`}>
-                  {selectFloodMode ? 'Click map to place flood...' : 'Place Flood on Map'}
-                </button>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-[10px] text-gray-500">Radius (m)</label>
-                    <input type="number" value={floodRadius} onChange={(e) => setFloodRadius(Number(e.target.value))} className="input-field text-xs py-1" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-gray-500">Depth (m)</label>
-                    <input type="number" step="0.1" value={floodDepth} onChange={(e) => setFloodDepth(Number(e.target.value))} className="input-field text-xs py-1" />
-                  </div>
-                </div>
-                {floodCenter && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-blue-600">Flood at: {floodCenter.lat.toFixed(4)}, {floodCenter.lon.toFixed(4)}</span>
-                    <button onClick={() => { setFloodCenter(null); setFloodEnabled(false); }} className="text-[10px] text-red-500"><Trash2 className="w-3 h-3" /></button>
-                  </div>
-                )}
+
+            {dbFloodZones && dbFloodZones.features?.length > 0 && (
+              <div className="text-[10px] text-blue-600 mb-2 bg-blue-50 p-1.5 rounded">
+                Showing {dbFloodZones.features.length} flood zone(s) from database
+                <button onClick={() => setDbFloodZones(null)} className="ml-2 text-red-500 underline">Hide</button>
               </div>
             )}
+
+            {/* Virtual flood creator */}
+            <div className="border-t border-gray-100 pt-2 mt-2">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-medium text-gray-600">VIRTUAL FLOOD (test)</span>
+                <button onClick={() => { setFloodEnabled(!floodEnabled); if (floodEnabled) setFloodCenter(null); }} className={`text-[10px] px-2 py-0.5 rounded ${floodEnabled ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                  {floodEnabled ? 'ON' : 'OFF'}
+                </button>
+              </div>
+              {floodEnabled && (
+                <div className="space-y-2">
+                  <button onClick={() => setSelectFloodMode(true)} className={`text-xs w-full py-1.5 rounded ${selectFloodMode ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}`}>
+                    {selectFloodMode ? 'Click map to place...' : 'Place on Map'}
+                  </button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] text-gray-500">Radius (m)</label>
+                      <input type="number" value={floodRadius} onChange={(e) => setFloodRadius(Number(e.target.value))} className="input-field text-xs py-1" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-gray-500">Depth (m)</label>
+                      <input type="number" step="0.1" value={floodDepth} onChange={(e) => setFloodDepth(Number(e.target.value))} className="input-field text-xs py-1" />
+                    </div>
+                  </div>
+                  {floodCenter && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-blue-600">At: {floodCenter.lat.toFixed(4)}, {floodCenter.lon.toFixed(4)}</span>
+                      <button onClick={() => { setFloodCenter(null); setFloodEnabled(false); }} className="text-[10px] text-red-500"><Trash2 className="w-3 h-3" /></button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Calculate */}
@@ -329,6 +366,26 @@ export default function Navigation() {
                 >
                   <Popup><b>Virtual Flood Zone</b><br/>Depth: {floodDepth}m<br/>Radius: {floodRadius}m</Popup>
                 </Circle>
+              )}
+
+              {/* Database Flood Zones (GeoJSON) */}
+              {dbFloodZones && dbFloodZones.features && dbFloodZones.features.length > 0 && (
+                <GeoJSON
+                  key={JSON.stringify(dbFloodZones)}
+                  data={dbFloodZones}
+                  style={(feature) => {
+                    const depth = feature.properties.max_depth || 0.5;
+                    let color = '#3b82f6';
+                    if (depth > 1.0) color = '#7f1d1d';
+                    else if (depth > 0.6) color = '#ef4444';
+                    else if (depth > 0.3) color = '#f97316';
+                    return { color, fillColor: color, fillOpacity: 0.3, weight: 2 };
+                  }}
+                  onEachFeature={(feature, layer) => {
+                    const p = feature.properties;
+                    layer.bindPopup(`<b>${p.event_name || 'Flood Zone'}</b><br/>Max Depth: ${p.max_depth || '?'}m<br/>Avg Depth: ${p.avg_depth || '?'}m<br/>Area: ${p.area_km2?.toFixed(2) || '?'} km²`);
+                  }}
+                />
               )}
             </MapContainer>
           </div>
