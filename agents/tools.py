@@ -73,7 +73,7 @@ async def search_amenity(
     limit: int = 10,
 ) -> str:
     """
-    Find amenities (hospitals, schools, shelters, pharmacies, etc.) in a city.
+    Find amenities (hospitals, schools, shelters, pharmacies, etc.) from the database.
 
     Args:
         amenity: Type of amenity (e.g. 'hospital', 'school', 'pharmacy', 'shelter')
@@ -82,16 +82,43 @@ async def search_amenity(
         country: Country (default: India)
         limit: Max results (default: 10)
     """
-    osm = _get_osm()
-    results = await osm.search_amenities(amenity, city, state, country, limit)
+    from database.connection import DatabaseManager
+    from sqlalchemy import text
 
-    if not results:
-        return f"No {amenity}s found in {city}, {state}, {country}"
+    try:
+        async with DatabaseManager.session() as session:
+            result = await session.execute(
+                text("""
+                    SELECT name, building_type, latitude, longitude, is_emergency_facility
+                    FROM buildings
+                    WHERE LOWER(building_type) LIKE :amenity
+                    ORDER BY name
+                    LIMIT :limit
+                """),
+                {"amenity": f"%{amenity.lower()}%", "limit": limit},
+            )
+            rows = result.fetchall()
 
-    lines = [f"Found {len(results)} {amenity}(s):\n"]
-    for i, place in enumerate(results, 1):
-        lines.append(f"{i}. {place['name']}\n   Coordinates: ({place['lat']}, {place['lon']})\n")
-    return "\n".join(lines)
+        if not rows:
+            # Fallback to Nominatim if DB is empty
+            osm = _get_osm()
+            results = await osm.search_amenities(amenity, city, state, country, limit)
+            if not results:
+                return f"No {amenity}s found in {city}"
+            lines = [f"Found {len(results)} {amenity}(s) (from OSM):\n"]
+            for i, place in enumerate(results, 1):
+                lines.append(f"{i}. {place['name']}\n   Coordinates: ({place['lat']}, {place['lon']})\n")
+            return "\n".join(lines)
+
+        lines = [f"Found {len(rows)} {amenity}(s) in database:\n"]
+        for i, row in enumerate(rows, 1):
+            r = dict(row._mapping)
+            emergency = " [EMERGENCY]" if r["is_emergency_facility"] else ""
+            lines.append(f"{i}. {r['name']}{emergency}\n   Coordinates: ({r['latitude']}, {r['longitude']})\n")
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"Error searching amenities: {e}"
 
 
 @tool
@@ -248,7 +275,7 @@ async def check_amenity_flood_status(
     country: str = "India",
 ) -> str:
     """
-    Check which amenities (hospitals, schools, etc.) are in flood zones.
+    Check which amenities (hospitals, schools, etc.) are in flood zones using database.
 
     Args:
         amenity: Type (e.g. 'hospital', 'school')
@@ -258,45 +285,55 @@ async def check_amenity_flood_status(
     """
     from database.connection import DatabaseManager
     from database.flood_repository import FloodRepository
-
-    osm = _get_osm()
-    places = await osm.search_amenities(amenity, city, state, country, 15)
-
-    if not places:
-        return f"No {amenity}s found in {city}"
-
-    safe_list, flood_list = [], []
+    from sqlalchemy import text
 
     try:
         async with DatabaseManager.session() as session:
+            # Get buildings from DB
+            result = await session.execute(
+                text("""
+                    SELECT id, name, building_type, latitude, longitude
+                    FROM buildings
+                    WHERE LOWER(building_type) LIKE :amenity
+                """),
+                {"amenity": f"%{amenity.lower()}%"},
+            )
+            buildings = [dict(row._mapping) for row in result.fetchall()]
+
+        if not buildings:
+            return f"No {amenity}s found in database. Try calculating a route first to download buildings."
+
+        # Check flood status for each building
+        safe_list, flood_list = [], []
+        async with DatabaseManager.session() as session:
             repo = FloodRepository(session)
-            for place in places:
-                depth = await repo.get_flood_depth_at_point(place["lat"], place["lon"])
-                entry = {**place, "depth": depth}
+            for b in buildings:
+                depth = await repo.get_flood_depth_at_point(b["latitude"], b["longitude"])
+                entry = {**b, "depth": depth}
                 if depth > 0:
                     flood_list.append(entry)
                 else:
                     safe_list.append(entry)
-    except Exception:
-        # Fallback: mark all as safe if DB unavailable
-        safe_list = places
 
-    lines = [
-        f"Flood Status — {amenity.capitalize()}s in {city}:",
-        f"  Total: {len(places)} | Safe: {len(safe_list)} | Flooded: {len(flood_list)}\n",
-    ]
+        lines = [
+            f"Flood Status — {amenity.capitalize()}s:",
+            f"  Total: {len(buildings)} | Safe: {len(safe_list)} | Flooded: {len(flood_list)}\n",
+        ]
 
-    if flood_list:
-        lines.append("FLOODED (avoid):")
-        for p in flood_list[:5]:
-            lines.append(f"  X {p['name']} — depth: {p['depth']:.2f}m ({p['lat']}, {p['lon']})")
+        if flood_list:
+            lines.append("FLOODED (avoid):")
+            for p in flood_list[:5]:
+                lines.append(f"  X {p['name']} — depth: {p['depth']:.2f}m ({p['latitude']}, {p['longitude']})")
 
-    if safe_list:
-        lines.append("\nSAFE (accessible):")
-        for p in safe_list[:5]:
-            lines.append(f"  OK {p['name']} ({p['lat']}, {p['lon']})")
+        if safe_list:
+            lines.append("\nSAFE (accessible):")
+            for p in safe_list[:5]:
+                lines.append(f"  OK {p['name']} ({p['latitude']}, {p['longitude']})")
 
-    return "\n".join(lines)
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"Error checking flood status: {e}"
 
 
 @tool

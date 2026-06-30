@@ -59,6 +59,9 @@ class GraphBuilder:
         # Step 1: Download road network
         G = self.osm_downloader.download_road_network(place, network_type)
 
+        # Step 2: Download and save buildings/amenities
+        self._download_buildings(place)
+
         # Step 2: Convert to GeoDataFrames
         nodes_gdf, edges_gdf = self.graph_converter.graph_to_gdfs(G)
 
@@ -133,3 +136,65 @@ class GraphBuilder:
         logger.info(f"Flood annotation: {flooded_count} edges flooded out of {len(edges_gdf)}")
 
         return edges_gdf
+
+    def _download_buildings(self, place: str):
+        """Download hospitals, schools, shelters, police, fire stations from OSM and save to DB."""
+        import asyncio
+        from osm.building_parser import BuildingParser
+        from database.connection import DatabaseManager
+        from sqlalchemy import text
+
+        try:
+            parser = BuildingParser()
+            logger.info(f"Downloading buildings/amenities for '{place}'...")
+
+            # Download amenities from OSM
+            gdf = parser.download_buildings_for_place(place)
+            if gdf.empty:
+                logger.warning(f"No buildings found for '{place}'")
+                return
+
+            # Extract structured building data
+            buildings = parser.extract_buildings(gdf, building_types=[
+                "hospital", "school", "shelter", "police_station", "fire_station", "pharmacy"
+            ])
+
+            if not buildings:
+                logger.info("No relevant amenities found")
+                return
+
+            # Save to database
+            async def _save():
+                async with DatabaseManager.session() as session:
+                    for b in buildings:
+                        try:
+                            await session.execute(
+                                text("""
+                                    INSERT INTO buildings (osm_id, name, building_type, latitude, longitude, is_emergency_facility, created_at)
+                                    VALUES (:osm_id, :name, :type, :lat, :lon, :emergency, NOW())
+                                    ON CONFLICT (osm_id) DO NOTHING
+                                """),
+                                {
+                                    "osm_id": b.get("osm_id") or hash(b["name"]) % 10000000,
+                                    "name": b["name"],
+                                    "type": b["building_type"],
+                                    "lat": b["latitude"],
+                                    "lon": b["longitude"],
+                                    "emergency": b.get("is_emergency_facility", False),
+                                },
+                            )
+                        except Exception:
+                            pass
+                    await session.commit()
+
+            # Run async save in current event loop or new one
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(_save())
+            except RuntimeError:
+                asyncio.run(_save())
+
+            logger.info(f"Downloaded {len(buildings)} buildings for '{place}'")
+
+        except Exception as e:
+            logger.warning(f"Building download failed (non-fatal): {e}")
