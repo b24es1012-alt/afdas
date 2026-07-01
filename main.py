@@ -173,6 +173,11 @@ async def rate_limit_middleware(request: Request, call_next):
     if request.url.path in ("/health", "/", "/docs", "/redoc", "/openapi.json"):
         return await call_next(request)
 
+    # Skip rate limiting for CORS preflight (OPTIONS) requests
+    # Browsers send these automatically before real requests — must never be blocked
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
     client_ip = RateLimiter.get_client_ip(request)
 
     # Determine tier based on path
