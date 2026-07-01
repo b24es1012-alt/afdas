@@ -38,11 +38,17 @@ def is_testing() -> bool:
 CORS_ORIGINS = {
     Environment.DEVELOPMENT: ["http://localhost:3000", "http://localhost:5173"],
     Environment.STAGING: ["https://staging.afdas.app"],
-    Environment.PRODUCTION: ["https://afdas.app"],
+    Environment.PRODUCTION: ["https://afdas.app", "https://www.afdas.app"],
     Environment.TESTING: ["http://localhost:3000"],
 }
 
 
 def get_cors_origins() -> list:
     env = get_environment()
-    return CORS_ORIGINS.get(env, CORS_ORIGINS[Environment.DEVELOPMENT])
+    # In production, NEVER allow wildcard origins
+    origins = CORS_ORIGINS.get(env, CORS_ORIGINS[Environment.DEVELOPMENT])
+    # Also check env var for custom origins
+    custom = os.getenv("CORS_ORIGINS", "")
+    if custom:
+        origins = origins + [o.strip() for o in custom.split(",") if o.strip()]
+    return origins

@@ -12,9 +12,11 @@ from fastapi.responses import JSONResponse
 import time
 
 from config.settings import settings
-from config.environment import get_cors_origins, get_environment
+from config.environment import get_cors_origins, get_environment, is_production
 from database.connection import DatabaseManager
 from cache.manager import CacheManager
+from auth.security_headers import SecurityHeadersMiddleware
+from auth.rate_limiter import RateLimiter
 from utils.logger import logger
 
 # API routers
@@ -49,6 +51,8 @@ async def lifespan(app: FastAPI):
     logger.info("=" * 60)
     logger.info(f"AFDAS Backend v{settings.APP_VERSION} starting...")
     logger.info(f"Environment: {get_environment().value}")
+    logger.info(f"Security: rate_limit={settings.RATE_LIMIT_REQUESTS}/min, "
+                f"login_lockout={settings.LOGIN_MAX_ATTEMPTS} attempts")
     logger.info("=" * 60)
 
     # ── Startup ──────────────────────────────────────────────────────────
@@ -101,26 +105,109 @@ app = FastAPI(
     ),
     version=settings.APP_VERSION,
     lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    # Disable docs in production for security
+    docs_url=None if is_production() else "/docs",
+    redoc_url=None if is_production() else "/redoc",
+    openapi_url=None if is_production() else "/openapi.json",
 )
 
 
 # ============================================================================
-# MIDDLEWARE
+# MIDDLEWARE (order matters — last added = first executed)
 # ============================================================================
 
-# CORS
+# 1. CORS — tightened for production
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_cors_origins(),
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "X-Request-ID",
+        "Accept",
+    ],
+    expose_headers=["X-Process-Time", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
+    max_age=600,  # Cache preflight for 10 minutes
 )
 
+# 2. Security headers
+app.add_middleware(SecurityHeadersMiddleware)
 
-# Request timing middleware
+
+# 3. Rate limiting middleware
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    """
+    Global rate limiting — applied to all requests.
+    Uses per-IP sliding window with Redis.
+    """
+    # Skip rate limiting for health checks
+    if request.url.path in ("/health", "/", "/docs", "/redoc", "/openapi.json"):
+        return await call_next(request)
+
+    client_ip = RateLimiter.get_client_ip(request)
+
+    # Determine tier based on path
+    path = request.url.path
+    if "/auth/login" in path or "/auth/register" in path:
+        tier = "auth"
+    elif "/chat" in path:
+        tier = "chat"
+    else:
+        tier = "general"
+
+    allowed, remaining, reset_in = await RateLimiter.check_rate_limit(
+        identifier=client_ip,
+        tier=tier,
+    )
+
+    if not allowed:
+        logger.warning(f"Rate limit exceeded: {client_ip} on {tier} tier")
+        return JSONResponse(
+            status_code=429,
+            content={
+                "error": "Too many requests",
+                "detail": f"Rate limit exceeded. Try again in {reset_in} seconds.",
+                "retry_after": reset_in,
+            },
+            headers={
+                "Retry-After": str(reset_in),
+                "X-RateLimit-Remaining": "0",
+                "X-RateLimit-Reset": str(reset_in),
+            },
+        )
+
+    # Process request
+    response = await call_next(request)
+
+    # Add rate limit headers to response
+    response.headers["X-RateLimit-Remaining"] = str(remaining)
+    response.headers["X-RateLimit-Reset"] = str(reset_in)
+
+    return response
+
+
+# 4. Request size limit middleware
+@app.middleware("http")
+async def request_size_limit_middleware(request: Request, call_next):
+    """Reject requests that exceed the configured body size limit."""
+    content_length = request.headers.get("content-length")
+    if content_length:
+        max_bytes = int(settings.MAX_REQUEST_SIZE_MB * 1024 * 1024)
+        if int(content_length) > max_bytes:
+            return JSONResponse(
+                status_code=413,
+                content={
+                    "error": "Request too large",
+                    "detail": f"Request body exceeds {settings.MAX_REQUEST_SIZE_MB}MB limit",
+                },
+            )
+    return await call_next(request)
+
+
+# 5. Request timing middleware
 @app.middleware("http")
 async def add_timing_header(request: Request, call_next):
     """Add X-Process-Time header to all responses."""
@@ -131,10 +218,10 @@ async def add_timing_header(request: Request, call_next):
     return response
 
 
-# Global exception handler
+# Global exception handler — hide internals in production
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """Catch-all error handler."""
+    """Catch-all error handler — never expose stack traces in production."""
     logger.error(f"Unhandled error: {exc}", exc_info=True)
     return JSONResponse(
         status_code=500,
@@ -164,13 +251,11 @@ app.include_router(visualize_router, prefix="/api/v1")
 
 @app.get("/")
 async def root():
-    """API root — basic info."""
+    """API root — basic info (no sensitive data)."""
     return {
-        "name": "AFDAS - AI Flood Disaster Assistance System",
+        "name": "AFDAS",
         "version": settings.APP_VERSION,
         "status": "running",
-        "docs": "/docs",
-        "health": "/health",
     }
 
 
@@ -187,4 +272,7 @@ if __name__ == "__main__":
         port=settings.PORT,
         reload=settings.DEBUG,
         workers=1 if settings.DEBUG else 4,
+        # Security: limit header/body sizes at server level
+        limit_max_requests=10000,
+        timeout_keep_alive=5,
     )

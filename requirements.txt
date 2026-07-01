@@ -33,6 +33,7 @@ requests==2.32.0
 # ─── Authentication ──────────────────────────────────────────────────────────
 PyJWT==2.9.0
 passlib[bcrypt]==1.7.4
+bcrypt==4.2.0
 
 # ─── Visualization (optional for backend map generation) ─────────────────────
 folium==0.17.0

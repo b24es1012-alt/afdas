@@ -77,6 +77,27 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRY_MINUTES: int = 1440  # 24 hours
 
+    # ── Security ─────────────────────────────────────────────────────────
+    # Rate limiting
+    RATE_LIMIT_REQUESTS: int = 60          # Max requests per window
+    RATE_LIMIT_WINDOW_SECONDS: int = 60    # Window size in seconds
+    RATE_LIMIT_AUTH_REQUESTS: int = 5      # Max login/register attempts per window
+    RATE_LIMIT_AUTH_WINDOW: int = 300      # Auth rate limit window (5 min)
+    RATE_LIMIT_CHAT_REQUESTS: int = 20     # Max AI chat requests per window
+    RATE_LIMIT_CHAT_WINDOW: int = 60       # Chat rate limit window (1 min)
+
+    # Brute force protection
+    LOGIN_MAX_ATTEMPTS: int = 5            # Max failed login attempts before lockout
+    LOGIN_LOCKOUT_SECONDS: int = 900       # Lockout duration (15 min)
+
+    # Request limits
+    MAX_REQUEST_SIZE_MB: float = 10.0      # Max request body size in MB
+
+    # Password requirements
+    PASSWORD_MIN_LENGTH: int = 8
+    PASSWORD_REQUIRE_UPPERCASE: bool = True
+    PASSWORD_REQUIRE_NUMBER: bool = True
+
     # ── Routing ──────────────────────────────────────────────────────────
     MAX_ROUTES: int = 3
     DEFAULT_VEHICLE: str = "car"
