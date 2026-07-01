@@ -248,3 +248,155 @@ async def list_flood_events(
     repo = FloodRepository(db)
     events = await repo.get_active_events()
     return {"events": events, "count": len(events)}
+
+
+
+# ── Admin: End Flood Event ───────────────────────────────────────────────────
+
+class EndFloodRequest(BaseModel):
+    """Request to mark a flood event as ended."""
+    reason: Optional[str] = Field(None, max_length=500, description="Reason for ending (e.g. 'Water receded', 'False alarm')")
+
+
+@router.post("/events/{event_id}/end")
+async def end_flood_event(
+    event_id: int,
+    request: EndFloodRequest = None,
+    db: AsyncSession = Depends(get_db),
+    admin: CurrentUser = Depends(get_current_user),
+):
+    """
+    Mark a flood event as ENDED (admin only).
+    
+    This will:
+    1. Set is_active = FALSE and end_date = NOW()
+    2. Invalidate cached graphs for affected areas (forces fresh route calculations)
+    3. Flood zones remain in DB for historical analytics but stop affecting routing
+    
+    After ending:
+    - New route calculations will NOT avoid previously flooded roads
+    - Frontend will stop showing these flood zones (only active zones shown)
+    - Historical data preserved for analytics/reports
+    """
+    from auth.middleware import require_admin
+
+    # Require admin role
+    if not admin or not admin.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required to end flood events",
+        )
+
+    repo = FloodRepository(db)
+
+    # Check event exists
+    from sqlalchemy import text
+    result = await db.execute(
+        text("SELECT id, activation_id, event_name, is_active, region FROM flood_events WHERE id = :id"),
+        {"id": event_id},
+    )
+    row = result.fetchone()
+
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Flood event {event_id} not found",
+        )
+
+    event = dict(row._mapping)
+
+    if not event["is_active"]:
+        return {
+            "status": "already_ended",
+            "message": f"Flood event '{event['event_name']}' is already marked as ended.",
+            "event_id": event_id,
+        }
+
+    # Deactivate the event
+    await repo.deactivate_event(event_id, end_date=datetime.utcnow())
+    await db.commit()
+
+    # Invalidate graph cache so routes are recalculated without flood blocks
+    try:
+        from cache.manager import CacheManager
+        from cache.graph_cache import GraphCache
+
+        graph_cache = GraphCache()
+        await graph_cache.clear_all()  # Clear all cached graphs
+        logger.info(f"Graph cache cleared after ending flood event {event_id}")
+    except Exception as e:
+        logger.warning(f"Cache invalidation failed (non-fatal): {e}")
+
+    reason = request.reason if request else None
+    logger.info(
+        f"Flood event ENDED by admin: {event['activation_id']} "
+        f"({event['event_name']}) — reason: {reason or 'not specified'}"
+    )
+
+    return {
+        "status": "ended",
+        "message": f"Flood event '{event['event_name']}' has been marked as ended.",
+        "event_id": event_id,
+        "activation_id": event["activation_id"],
+        "ended_at": datetime.utcnow().isoformat(),
+        "reason": reason,
+        "cache_cleared": True,
+        "note": "All cached graphs invalidated. Next route requests will use fresh data without this flood.",
+    }
+
+
+@router.post("/events/{event_id}/reactivate")
+async def reactivate_flood_event(
+    event_id: int,
+    db: AsyncSession = Depends(get_db),
+    admin: CurrentUser = Depends(get_current_user),
+):
+    """
+    Reactivate a previously ended flood event (admin only).
+    Use if a flood was ended prematurely or water levels rose again.
+    """
+    if not admin or not admin.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+
+    from sqlalchemy import text
+
+    result = await db.execute(
+        text("SELECT id, activation_id, event_name, is_active FROM flood_events WHERE id = :id"),
+        {"id": event_id},
+    )
+    row = result.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Event {event_id} not found")
+
+    event = dict(row._mapping)
+
+    if event["is_active"]:
+        return {"status": "already_active", "message": "Event is already active."}
+
+    # Reactivate
+    await db.execute(
+        text("UPDATE flood_events SET is_active = TRUE, end_date = NULL, updated_at = NOW() WHERE id = :id"),
+        {"id": event_id},
+    )
+    await db.commit()
+
+    # Clear cache so flood data is picked up again
+    try:
+        from cache.graph_cache import GraphCache
+        graph_cache = GraphCache()
+        await graph_cache.clear_all()
+    except Exception:
+        pass
+
+    logger.info(f"Flood event REACTIVATED: {event['activation_id']} ({event['event_name']})")
+
+    return {
+        "status": "reactivated",
+        "message": f"Flood event '{event['event_name']}' is active again.",
+        "event_id": event_id,
+        "cache_cleared": True,
+    }
