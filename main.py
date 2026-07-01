@@ -70,6 +70,32 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Redis connection failed (non-fatal): {e}")
 
+    # Start Copernicus EMS auto-polling scheduler
+    try:
+        from scheduler.copernicus_job import CopernicusPollingJob
+        import asyncio
+
+        copernicus_job = CopernicusPollingJob()
+
+        async def _polling_loop():
+            """Background loop that polls Copernicus EMS for new flood data."""
+            await asyncio.sleep(10)  # Wait 10s after startup before first poll
+            while True:
+                try:
+                    await copernicus_job.run()
+                except Exception as e:
+                    logger.error(f"Copernicus polling error: {e}")
+                await asyncio.sleep(copernicus_job.poll_interval)
+
+        # Start as background task
+        asyncio.create_task(_polling_loop())
+        logger.info(
+            f"Copernicus EMS auto-poller started "
+            f"(interval: {settings.COPERNICUS_POLL_INTERVAL}s)"
+        )
+    except Exception as e:
+        logger.warning(f"Copernicus scheduler failed to start (non-fatal): {e}")
+
     logger.info("AFDAS Backend ready to serve requests")
     logger.info(f"Listening on {settings.HOST}:{settings.PORT}")
 

@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     COPERNICUS_API_URL: str = "https://emergency.copernicus.eu/mapping/list-of-components"
     COPERNICUS_DOWNLOAD_BASE: str = "https://emergency.copernicus.eu/mapping/download"
     COPERNICUS_POLL_INTERVAL: int = 300  # seconds (5 minutes)
+    COPERNICUS_WATCH_COUNTRIES: str = "India"  # Comma-separated countries to auto-monitor
+    COPERNICUS_AUTO_IMPORT: bool = True  # Enable/disable automatic flood import
 
     # ── OpenStreetMap ────────────────────────────────────────────────────
     OSM_NOMINATIM_URL: str = "https://nominatim.openstreetmap.org"
