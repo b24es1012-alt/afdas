@@ -1,0 +1,72 @@
+# Render Blueprint — Infrastructure as Code
+# Deploy all services at once: https://render.com/docs/blueprint-spec
+
+services:
+  # ── FastAPI Backend ────────────────────────────────────────────────────────
+  - type: web
+    name: afdas-backend
+    runtime: python
+    repo: https://github.com/b24es1012-alt/afdas
+    branch: feat/afdas-backend
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: AFDAS_ENV
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: DB_HOST
+        fromDatabase:
+          name: afdas-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: afdas-db
+          property: port
+      - key: DB_NAME
+        fromDatabase:
+          name: afdas-db
+          property: database
+      - key: DB_USER
+        fromDatabase:
+          name: afdas-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: afdas-db
+          property: password
+      - key: REDIS_HOST
+        fromService:
+          name: afdas-redis
+          type: redis
+          property: host
+      - key: REDIS_PORT
+        fromService:
+          name: afdas-redis
+          type: redis
+          property: port
+      - key: GROQ_API_KEY
+        sync: false  # Set manually in Render dashboard
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: COPERNICUS_AUTO_IMPORT
+        value: "true"
+      - key: COPERNICUS_WATCH_COUNTRIES
+        value: "India"
+
+  # ── Redis Cache ────────────────────────────────────────────────────────────
+  - type: redis
+    name: afdas-redis
+    plan: free
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []  # Allow all (internal only)
+
+# ── PostgreSQL + PostGIS ───────────────────────────────────────────────────────
+databases:
+  - name: afdas-db
+    plan: free
+    databaseName: afdas
+    user: afdas_user
+    postgresMajorVersion: "16"
