@@ -12,8 +12,11 @@ export default function Admin() {
 
   const checkHealth = async () => {
     try {
-      const res = await api.get('/health');
-      setHealth(res.data);
+      // Health endpoint is at /health (no /api/v1 prefix)
+      const baseUrl = import.meta.env.VITE_API_BASE_URL?.replace('/api/v1', '') || 'http://localhost:8000';
+      const res = await fetch(`${baseUrl}/health`);
+      const data = await res.json();
+      setHealth(data);
     } catch (err) {
       setHealth({ status: 'error', error: err.message });
     }
