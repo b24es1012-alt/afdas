@@ -83,6 +83,10 @@ class RoutingService:
             flood_shapefile=flood_shapefile,
             flood_gdf=flood_gdf,
             event_id=event_id,
+            start_lat=start_lat,
+            start_lon=start_lon,
+            end_lat=end_lat,
+            end_lon=end_lon,
         )
 
         vehicle = get_vehicle_profile(vehicle_type)

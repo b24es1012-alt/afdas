@@ -268,3 +268,71 @@ async def route_history(
     """Get route history for the current user or event."""
     # TODO: Connect to route_repository
     return {"routes": [], "message": "Route history endpoint - connect to database"}
+
+
+
+# ── Nearby Cities / Border Detection ─────────────────────────────────────────
+
+class NearbyCitiesRequest(BaseModel):
+    """Request to check for nearby cities at border areas."""
+    lat: float = Field(..., ge=-90, le=90)
+    lon: float = Field(..., ge=-180, le=180)
+    place: str = Field(default="New Delhi, India")
+
+
+@router.post("/nearby-cities")
+async def check_nearby_cities(request: NearbyCitiesRequest):
+    """
+    Check if a point is near the border of a city and return neighboring cities.
+    
+    This helps the frontend show which additional areas will be downloaded
+    for optimal cross-boundary routing.
+    """
+    from graph.border_detector import BorderDetector
+
+    detector = BorderDetector()
+
+    is_near, direction = detector.is_near_border(request.lat, request.lon, request.place)
+
+    nearby = []
+    if is_near:
+        nearby = detector.get_nearby_cities(request.lat, request.lon, request.place, direction)
+
+    return {
+        "is_near_border": is_near,
+        "direction": direction,
+        "nearby_cities": [
+            {"name": c.get("name", ""), "place": c.get("place", ""), "direction": c.get("direction", "")}
+            for c in nearby
+        ],
+        "message": (
+            f"Point is near the {direction.upper()} border of {request.place}. "
+            f"{len(nearby)} neighboring area(s) available for extended routing."
+            if is_near
+            else f"Point is well within {request.place} boundaries."
+        ),
+    }
+
+
+@router.get("/neighbors/{place}")
+async def list_city_neighbors(place: str):
+    """
+    List all known neighboring cities for a given place.
+    Used by frontend to show coverage expansion options.
+    """
+    from graph.border_detector import CITY_NEIGHBORS
+
+    # URL-decode the place name
+    from urllib.parse import unquote
+    place_decoded = unquote(place)
+
+    neighbors = CITY_NEIGHBORS.get(place_decoded, [])
+
+    return {
+        "place": place_decoded,
+        "neighbors": [
+            {"name": n["name"], "place": n["place"], "direction": n["direction"]}
+            for n in neighbors
+        ],
+        "count": len(neighbors),
+    }
