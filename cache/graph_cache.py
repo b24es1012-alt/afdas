@@ -25,6 +25,7 @@ class GraphCache:
     def __init__(self):
         self.serializer = GraphSerializer()
         self.ttl = settings.REDIS_GRAPH_TTL
+        self.flood_ttl = settings.REDIS_GRAPH_FLOOD_TTL
 
     async def store_full_graph(
         self,
@@ -33,11 +34,18 @@ class GraphCache:
         G_simple: nx.DiGraph,
         edges_gdf: gpd.GeoDataFrame,
     ) -> None:
-        """Store a full graph bundle in Redis."""
+        """Store a full graph bundle in Redis with appropriate TTL."""
         client = CacheManager.get_client()
         data = self.serializer.serialize_full(G, G_simple, edges_gdf)
-        await client.setex(f"{self.PREFIX}{key}", self.ttl, data)
-        logger.info(f"Stored graph: {key} ({len(data)} bytes, TTL={self.ttl}s)")
+
+        # Use longer TTL for flood-annotated graphs (they have event IDs, not "default")
+        # Key format: "base:{event_id}:{place}" or "merged:{event_id}:{places}"
+        # If event_id is NOT "default", it's a flooded graph → keep longer
+        is_flooded = "default" not in key
+        ttl = self.flood_ttl if is_flooded else self.ttl
+
+        await client.setex(f"{self.PREFIX}{key}", ttl, data)
+        logger.info(f"Stored graph: {key} ({len(data)} bytes, TTL={ttl}s {'[FLOOD]' if is_flooded else '[normal]'})")
 
     async def get_full_graph(
         self, key: str
