@@ -122,6 +122,7 @@ export default function Navigation() {
   const [selectMode, setSelectMode] = useState(null);
   const [dbFloodZones, setDbFloodZones] = useState(null);
   const [loadingFlood, setLoadingFlood] = useState(false);
+  const [nearbyCities, setNearbyCities] = useState(null); // Nearby border cities info
   const [gpsCenter, setGpsCenter] = useState(null);
   const [isFollowing, setIsFollowing] = useState(false);
   const { selectedVehicle } = useVehicleStore();
@@ -174,6 +175,30 @@ export default function Navigation() {
   // Custom vehicle clearance
   const [useCustomClearance, setUseCustomClearance] = useState(false);
   const [customClearance, setCustomClearance] = useState('0.30');
+
+  // Check for nearby cities when origin/destination is near a border
+  React.useEffect(() => {
+    const checkNearby = async () => {
+      // Check destination (more likely to be in another city)
+      const checkLat = hasDest ? parseFloat(destLat) : (hasOrigin ? parseFloat(originLat) : null);
+      const checkLon = hasDest ? parseFloat(destLon) : (hasOrigin ? parseFloat(originLon) : null);
+      if (!checkLat || !checkLon) { setNearbyCities(null); return; }
+      try {
+        const res = await axios.post(`${API_URL}/navigation/nearby-cities`, {
+          lat: checkLat, lon: checkLon, place,
+        });
+        if (res.data.is_near_border) {
+          setNearbyCities(res.data);
+        } else {
+          setNearbyCities(null);
+        }
+      } catch (err) {
+        // Non-critical — silently ignore
+        setNearbyCities(null);
+      }
+    };
+    checkNearby();
+  }, [destLat, destLon, originLat, originLon, place]);
 
   const hasOrigin = originLat !== '' && originLon !== '' && !isNaN(parseFloat(originLat)) && !isNaN(parseFloat(originLon));
   const hasDest = destLat !== '' && destLon !== '' && !isNaN(parseFloat(destLat)) && !isNaN(parseFloat(destLon));
@@ -319,6 +344,26 @@ export default function Navigation() {
             {dbFloodZones && dbFloodZones.features?.length > 0 && <div className="text-[10px] text-blue-600 bg-blue-50 p-1.5 rounded flex justify-between"><span>{dbFloodZones.features.length} zone(s) on map</span><button onClick={() => setDbFloodZones(null)} className="text-red-500 underline">Hide</button></div>}
             {dbFloodZones && dbFloodZones.features?.length === 0 && <p className="text-[10px] text-gray-400 mt-1">No flood zones in DB. Insert via pgAdmin.</p>}
           </div>
+          {/* Nearby Cities Indicator (shown when near border) */}
+          {nearbyCities && nearbyCities.is_near_border && (
+            <div className="card p-3 border-l-4 border-indigo-400 bg-indigo-50/50">
+              <div className="flex items-center gap-2 mb-1">
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                <label className="text-xs font-semibold text-indigo-700">NEAR CITY BORDER</label>
+              </div>
+              <p className="text-[10px] text-indigo-600 mb-1">{nearbyCities.message}</p>
+              {nearbyCities.nearby_cities?.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {nearbyCities.nearby_cities.map((city, i) => (
+                    <span key={i} className="text-[9px] px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full">
+                      {city.name} ({city.direction.toUpperCase()})
+                    </span>
+                  ))}
+                </div>
+              )}
+              <p className="text-[9px] text-indigo-500 mt-1.5">Maps for these areas will auto-download for best routing.</p>
+            </div>
+          )}
           {/* Calculate */}
           <button onClick={handleCalculateRoute} disabled={!hasOrigin || !hasDest || isCalculating} className="btn-primary w-full flex items-center justify-center gap-2 py-3">
             {isCalculating ? <Loader2 className="w-5 h-5 animate-spin" /> : <NavIcon className="w-5 h-5" />}
@@ -399,9 +444,19 @@ function AIChatPanel({ gpsCenter, onRouteCalculated }) {
   const [messages, setMessages] = React.useState([{id:'1',role:'assistant',text:'Hi! I can help with flood info, safe routes, hospitals & more. Ask me anything!'}]);
   const [input, setInput] = React.useState('');
   const [loading, setLoading] = React.useState(false);
+  const [sessionId, setSessionId] = React.useState(null); // Redis session ID for memory
   const messagesEndRef = React.useRef(null);
 
   React.useEffect(() => { messagesEndRef.current?.scrollIntoView({behavior:'smooth'}); }, [messages]);
+
+  // Reset session (clear conversation memory)
+  const resetSession = () => {
+    if (sessionId) {
+      axios.delete(`${API_URL}/chat/session/${sessionId}`).catch(() => {});
+    }
+    setSessionId(null);
+    setMessages([{id:'1',role:'assistant',text:'Session reset! How can I help you?'}]);
+  };
 
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
@@ -410,10 +465,21 @@ function AIChatPanel({ gpsCenter, onRouteCalculated }) {
     setInput('');
     setLoading(true);
     try {
-      const res = await axios.post(`${API_URL}/chat`, {message: userMsg.text, lat: gpsCenter?.[0] || null, lon: gpsCenter?.[1] || null});
+      const res = await axios.post(`${API_URL}/chat`, {
+        message: userMsg.text,
+        session_id: sessionId, // Send session_id for conversation memory
+        lat: gpsCenter?.[0] || null,
+        lon: gpsCenter?.[1] || null,
+      });
+
+      // Store session_id from response (auto-generated on first message)
+      if (res.data.session_id && !sessionId) {
+        setSessionId(res.data.session_id);
+      }
       
       // Check if AI response includes route data
-      const hasRoutes = res.data.routes && Array.isArray(res.data.routes) && res.data.routes.length > 0;
+      const aiRoutes = res.data.routes;
+      const hasRoutes = aiRoutes && Array.isArray(aiRoutes) && aiRoutes.length > 0;
       
       const assistantText = res.data.response || 'No response';
       setMessages(prev => [...prev, {
@@ -422,11 +488,12 @@ function AIChatPanel({ gpsCenter, onRouteCalculated }) {
         text: assistantText, 
         category: res.data.category,
         hasRoutes: hasRoutes,
+        routeData: hasRoutes ? aiRoutes : null, // Store route data for "Show on Map" button
       }]);
 
-      // If routes were calculated, push them to the map
+      // If routes were calculated, automatically push them to the map
       if (hasRoutes && onRouteCalculated) {
-        onRouteCalculated(res.data.routes);
+        onRouteCalculated(aiRoutes);
       }
     } catch (err) {
       setMessages(prev => [...prev, {id:(Date.now()+1).toString(), role:'assistant', text: 'Error: ' + (err.response?.data?.detail || err.message), isError: true}]);
@@ -447,9 +514,12 @@ function AIChatPanel({ gpsCenter, onRouteCalculated }) {
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-primary-50 rounded-t-xl">
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 bg-primary-600 rounded-full flex items-center justify-center"><svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714a2.25 2.25 0 00.659 1.591L19 14.5" /></svg></div>
-          <div><p className="text-sm font-semibold text-gray-800">AI Flood Assistant</p><p className="text-[10px] text-gray-500">Ask about floods, routes, hospitals</p></div>
+          <div><p className="text-sm font-semibold text-gray-800">AI Flood Assistant</p><p className="text-[10px] text-gray-500">{sessionId ? 'Session active' : 'Ask about floods, routes, hospitals'}</p></div>
         </div>
-        <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-600 p-1"><svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+        <div className="flex items-center gap-1">
+          {sessionId && <button onClick={resetSession} title="Reset conversation" className="text-gray-400 hover:text-red-500 p-1"><svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg></button>}
+          <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-600 p-1"><svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+        </div>
       </div>
 
       {/* Messages */}
@@ -459,9 +529,20 @@ function AIChatPanel({ gpsCenter, onRouteCalculated }) {
             <div className={`max-w-[85%] px-3 py-2 rounded-lg text-sm ${msg.role === 'user' ? 'bg-primary-600 text-white' : msg.isError ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-gray-100 text-gray-800'}`}>
               <p className="whitespace-pre-wrap">{msg.text}</p>
               {msg.hasRoutes && (
-                <div className="mt-2 flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 rounded text-[10px] font-medium">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l5.447 2.724A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>
-                  Route displayed on map
+                <div className="mt-2 space-y-1">
+                  <div className="flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 rounded text-[10px] font-medium">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l5.447 2.724A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>
+                    Route displayed on map
+                  </div>
+                  {msg.routeData && (
+                    <button
+                      onClick={() => onRouteCalculated && onRouteCalculated(msg.routeData)}
+                      className="flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded text-[10px] font-medium hover:bg-green-200 transition-colors cursor-pointer"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                      Show on Map Again
+                    </button>
+                  )}
                 </div>
               )}
               {msg.category && <span className="text-[9px] opacity-60 block mt-1">{msg.category}</span>}
