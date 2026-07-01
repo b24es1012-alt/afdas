@@ -81,12 +81,12 @@ class MultiCityLoader:
         )
 
         if not additional_cities:
-            logger.debug("No cross-boundary routing needed")
+            logger.debug("No neighboring cities found for this area — using single city graph")
             return None
 
         logger.info(
-            f"Cross-boundary routing detected! "
-            f"Primary: {primary_place}, Additional: {[c['name'] for c in additional_cities]}"
+            f"Multi-city routing: downloading {len(additional_cities)} neighboring area(s) "
+            f"for '{primary_place}': {[c['name'] for c in additional_cities]}"
         )
 
         # Build cache key for merged graph

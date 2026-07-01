@@ -81,8 +81,8 @@ class Settings(BaseSettings):
     MAX_ROUTES: int = 3
     DEFAULT_VEHICLE: str = "car"
     REROUTE_CHECK_INTERVAL: int = 30  # seconds
-    NEARBY_CITY_RADIUS_KM: float = 15.0  # Radius to check for nearby cities at border areas
-    BORDER_THRESHOLD_KM: float = 5.0     # If user is within this distance of city boundary, trigger nearby city download
+    NEARBY_CITY_RADIUS_KM: float = 45.0  # Radius to include ALL neighboring cities (covers Delhi-NCR, Mumbai metro, etc.)
+    BORDER_THRESHOLD_KM: float = 5.0     # If user is within this distance of city boundary, show border indicator on frontend
 
     # ── Monitoring ───────────────────────────────────────────────────────
     GPS_UPDATE_INTERVAL: int = 15  # seconds

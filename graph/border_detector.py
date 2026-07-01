@@ -194,13 +194,14 @@ class BorderDetector:
         place: str,
     ) -> List[Dict[str, str]]:
         """
-        Determine if a route likely crosses city boundaries and identify
-        which additional city maps are needed.
+        Get ALL neighboring cities within radius that should be downloaded
+        whenever a route is calculated in this city.
 
-        Logic:
-        - Check if origin OR destination is near the border
-        - Check if destination is OUTSIDE the current city bbox
-        - Check if the straight-line path crosses a boundary
+        Strategy: ALWAYS download all nearby cities within NEARBY_CITY_RADIUS_KM
+        because the optimal route may pass through a neighboring city even if
+        origin and destination are both within the primary city.
+
+        Example: Delhi to South Delhi — best route might use Noida Expressway.
 
         Args:
             start_lat, start_lon: Origin
@@ -208,68 +209,45 @@ class BorderDetector:
             place: Current city
 
         Returns:
-            List of additional cities/places to download (may be empty)
+            List of ALL neighboring cities within radius (always downloads them)
         """
+        neighbors = CITY_NEIGHBORS.get(place, [])
+
+        if not neighbors:
+            # Unknown city — no pre-defined neighbors
+            return []
+
+        # ALWAYS return ALL neighbors within the configured radius
+        # This ensures the best possible route is found regardless of
+        # where origin/destination are within the city
         cities_to_download = []
         seen_places = {place}
 
+        # Get city center for distance calculation
         bbox = CITY_BBOXES.get(place)
-
-        # Case 1: Destination is outside current city bbox
         if bbox:
-            min_lat, min_lon, max_lat, max_lon = bbox
-            dest_outside = (
-                end_lat < min_lat or end_lat > max_lat or
-                end_lon < min_lon or end_lon > max_lon
-            )
-            origin_outside = (
-                start_lat < min_lat or start_lat > max_lat or
-                start_lon < min_lon or start_lon > max_lon
-            )
+            city_center_lat = (bbox[0] + bbox[2]) / 2
+            city_center_lon = (bbox[1] + bbox[3]) / 2
+        else:
+            # Use midpoint of origin/destination as reference
+            city_center_lat = (start_lat + end_lat) / 2
+            city_center_lon = (start_lon + end_lon) / 2
 
-            if dest_outside or origin_outside:
-                # Find which neighbors are closest to the outside point
-                outside_point = (end_lat, end_lon) if dest_outside else (start_lat, start_lon)
-                neighbors = CITY_NEIGHBORS.get(place, [])
-                
-                for neighbor in neighbors:
-                    n_center = neighbor["center"]
-                    dist = haversine_km(outside_point[0], outside_point[1], n_center[0], n_center[1])
-                    if dist < self.nearby_radius_km and neighbor["place"] not in seen_places:
-                        cities_to_download.append(neighbor)
-                        seen_places.add(neighbor["place"])
+        for neighbor in neighbors:
+            n_center = neighbor["center"]
+            # Check distance from city center to neighbor center
+            dist = haversine_km(city_center_lat, city_center_lon, n_center[0], n_center[1])
 
-                # If no known neighbor is close, check if we can identify by coordinates
-                if not cities_to_download and (dest_outside or origin_outside):
-                    dynamic = self._find_nearby_cities_dynamic(
-                        outside_point[0], outside_point[1], place
-                    )
-                    for city in dynamic:
-                        if city["place"] not in seen_places:
-                            cities_to_download.append(city)
-                            seen_places.add(city["place"])
-
-        # Case 2: Origin is near border
-        near_border_origin, dir_origin = self.is_near_border(start_lat, start_lon, place)
-        if near_border_origin:
-            nearby = self.get_nearby_cities(start_lat, start_lon, place, dir_origin)
-            for city in nearby:
-                if city["place"] not in seen_places:
-                    cities_to_download.append(city)
-                    seen_places.add(city["place"])
-
-        # Case 3: Destination is near border
-        near_border_dest, dir_dest = self.is_near_border(end_lat, end_lon, place)
-        if near_border_dest:
-            nearby = self.get_nearby_cities(end_lat, end_lon, place, dir_dest)
-            for city in nearby:
-                if city["place"] not in seen_places:
-                    cities_to_download.append(city)
-                    seen_places.add(city["place"])
+            if dist < self.nearby_radius_km and neighbor["place"] not in seen_places:
+                cities_to_download.append(neighbor)
+                seen_places.add(neighbor["place"])
 
         if cities_to_download:
             names = [c["name"] for c in cities_to_download]
-            logger.info(f"Border detection: route may cross into {names}")
+            logger.info(
+                f"Auto-downloading ALL nearby cities for '{place}': {names} "
+                f"(within {self.nearby_radius_km}km radius)"
+            )
 
         return cities_to_download
 
