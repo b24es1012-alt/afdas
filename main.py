@@ -142,20 +142,18 @@ app = FastAPI(
 # MIDDLEWARE (order matters — last added = first executed)
 # ============================================================================
 
-# 1. CORS — tightened for production
+# 1. CORS
+_cors_origins = get_cors_origins()
+_allow_all = "*" in _cors_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=get_cors_origins(),
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=not _allow_all,  # credentials not allowed with wildcard origin
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=[
-        "Authorization",
-        "Content-Type",
-        "X-Request-ID",
-        "Accept",
-    ],
+    allow_headers=["*"],  # Allow all headers for preflight
     expose_headers=["X-Process-Time", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
-    max_age=600,  # Cache preflight for 10 minutes
+    max_age=600,
 )
 
 # 2. Security headers
