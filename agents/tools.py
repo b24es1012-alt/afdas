@@ -72,27 +72,38 @@ async def _detect_place_from_coordinates(
 ) -> str:
     """
     Auto-detect the OSM place name from route coordinates.
-    Uses the midpoint of origin/destination for reverse geocoding.
-    Falls back to origin coordinates if midpoint fails.
-
+    
+    Strategy:
+    - Geocode BOTH origin and destination separately
+    - If they're in the same city → return that city
+    - If different cities → return the larger/primary city (the multi-city
+      loader will handle downloading additional cities via border detection)
+    
     Returns an OSM-compatible place string like "Dehradun, India" or "New Delhi, India"
     """
-    # Use midpoint for better coverage
-    mid_lat = (start_lat + end_lat) / 2
-    mid_lon = (start_lon + end_lon) / 2
+    # Geocode origin
+    origin_city, origin_state, origin_country = await _reverse_geocode_city(start_lat, start_lon)
+    # Geocode destination
+    dest_city, dest_state, dest_country = await _reverse_geocode_city(end_lat, end_lon)
 
-    city, state, country = await _reverse_geocode_city(mid_lat, mid_lon)
+    logger.info(f"[place_detect] Origin: {origin_city}, {origin_state} | Dest: {dest_city}, {dest_state}")
 
-    # Build place string that OSMnx can understand
-    # Try "City, Country" first (works for most cities)
-    if city and country:
-        place = f"{city}, {country}"
-    elif state and country:
-        place = f"{state}, {country}"
-    else:
-        place = "New Delhi, India"
+    # Build place strings
+    origin_place = f"{origin_city}, {origin_country}" if origin_city and origin_country else None
+    dest_place = f"{dest_city}, {dest_country}" if dest_city and dest_country else None
 
-    return place
+    # If same city, just use it
+    if origin_city and dest_city and origin_city.lower() == dest_city.lower():
+        return origin_place or "New Delhi, India"
+
+    # Different cities — pick the origin city as primary
+    # (the multi-city loader will detect that dest is outside and download it)
+    if origin_place:
+        return origin_place
+    if dest_place:
+        return dest_place
+
+    return "New Delhi, India"
 
 @tool
 async def get_coordinates_from_location(

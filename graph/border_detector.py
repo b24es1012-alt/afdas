@@ -194,60 +194,112 @@ class BorderDetector:
         place: str,
     ) -> List[Dict[str, str]]:
         """
-        Get ALL neighboring cities within radius that should be downloaded
-        whenever a route is calculated in this city.
+        Detect ALL additional cities needed for routing.
 
-        Strategy: ALWAYS download all nearby cities within NEARBY_CITY_RADIUS_KM
-        because the optimal route may pass through a neighboring city even if
-        origin and destination are both within the primary city.
+        Strategy:
+        1. ALWAYS download pre-defined neighbors within radius (for known cities)
+        2. If destination is OUTSIDE the primary city → also download destination's area
+        3. If origin is OUTSIDE the primary city → also download origin's area
 
-        Example: Delhi to South Delhi — best route might use Noida Expressway.
+        This handles:
+        - "Noida to Gurgaon" (origin city primary, dest city added)
+        - "Delhi to Delhi" (neighbors downloaded for better routes)
+        - "Dehradun to Rishikesh" (both added as dynamic areas)
 
         Args:
             start_lat, start_lon: Origin
             end_lat, end_lon: Destination
-            place: Current city
+            place: Primary city (usually origin city)
 
         Returns:
-            List of ALL neighboring cities within radius (always downloads them)
+            List of cities/areas to download in addition to the primary city
         """
-        neighbors = CITY_NEIGHBORS.get(place, [])
-
-        if not neighbors:
-            # Unknown city — no pre-defined neighbors
-            return []
-
-        # ALWAYS return ALL neighbors within the configured radius
-        # This ensures the best possible route is found regardless of
-        # where origin/destination are within the city
         cities_to_download = []
         seen_places = {place}
 
-        # Get city center for distance calculation
+        # ── Step 1: Add pre-defined neighbors within radius ──────────────
+        neighbors = CITY_NEIGHBORS.get(place, [])
+        if neighbors:
+            bbox = CITY_BBOXES.get(place)
+            if bbox:
+                city_center_lat = (bbox[0] + bbox[2]) / 2
+                city_center_lon = (bbox[1] + bbox[3]) / 2
+            else:
+                city_center_lat = start_lat
+                city_center_lon = start_lon
+
+            for neighbor in neighbors:
+                n_center = neighbor["center"]
+                dist = haversine_km(city_center_lat, city_center_lon, n_center[0], n_center[1])
+                if dist < self.nearby_radius_km and neighbor["place"] not in seen_places:
+                    cities_to_download.append(neighbor)
+                    seen_places.add(neighbor["place"])
+
+        # ── Step 2: Check if destination is outside primary city ──────────
         bbox = CITY_BBOXES.get(place)
         if bbox:
-            city_center_lat = (bbox[0] + bbox[2]) / 2
-            city_center_lon = (bbox[1] + bbox[3]) / 2
+            min_lat, min_lon, max_lat, max_lon = bbox
+            dest_outside = (
+                end_lat < min_lat - 0.01 or end_lat > max_lat + 0.01 or
+                end_lon < min_lon - 0.01 or end_lon > max_lon + 0.01
+            )
+            origin_outside = (
+                start_lat < min_lat - 0.01 or start_lat > max_lat + 0.01 or
+                start_lon < min_lon - 0.01 or start_lon > max_lon + 0.01
+            )
         else:
-            # Use midpoint of origin/destination as reference
-            city_center_lat = (start_lat + end_lat) / 2
-            city_center_lon = (start_lon + end_lon) / 2
+            # Unknown city — check distance between origin and destination
+            dist_apart = haversine_km(start_lat, start_lon, end_lat, end_lon)
+            dest_outside = dist_apart > 10  # If >10km apart, likely different areas
+            origin_outside = False
 
-        for neighbor in neighbors:
-            n_center = neighbor["center"]
-            # Check distance from city center to neighbor center
-            dist = haversine_km(city_center_lat, city_center_lon, n_center[0], n_center[1])
+        # If destination is outside, add it as a dynamic download
+        if dest_outside:
+            # Check if destination matches any known neighbor already added
+            dest_covered = False
+            for city in cities_to_download:
+                if city.get("center"):
+                    dist_to_dest = haversine_km(end_lat, end_lon, city["center"][0], city["center"][1])
+                    if dist_to_dest < 10:  # Destination is within 10km of a known neighbor
+                        dest_covered = True
+                        break
 
-            if dist < self.nearby_radius_km and neighbor["place"] not in seen_places:
-                cities_to_download.append(neighbor)
-                seen_places.add(neighbor["place"])
+            if not dest_covered:
+                # Add destination area as dynamic download
+                dest_entry = {
+                    "name": f"Destination area ({end_lat:.3f}, {end_lon:.3f})",
+                    "place": None,  # Signals point-based download
+                    "lat": end_lat,
+                    "lon": end_lon,
+                    "radius_m": 10000,  # 10km radius around destination
+                }
+                cities_to_download.append(dest_entry)
+                logger.info(f"Destination ({end_lat:.4f}, {end_lon:.4f}) is outside '{place}' — adding dynamic area")
+
+        # If origin is outside (user passed a "wrong" primary city), add origin area too
+        if origin_outside:
+            origin_covered = False
+            for city in cities_to_download:
+                if city.get("center"):
+                    dist_to_origin = haversine_km(start_lat, start_lon, city["center"][0], city["center"][1])
+                    if dist_to_origin < 10:
+                        origin_covered = True
+                        break
+
+            if not origin_covered:
+                origin_entry = {
+                    "name": f"Origin area ({start_lat:.3f}, {start_lon:.3f})",
+                    "place": None,
+                    "lat": start_lat,
+                    "lon": start_lon,
+                    "radius_m": 10000,
+                }
+                cities_to_download.append(origin_entry)
+                logger.info(f"Origin ({start_lat:.4f}, {start_lon:.4f}) is outside '{place}' — adding dynamic area")
 
         if cities_to_download:
             names = [c["name"] for c in cities_to_download]
-            logger.info(
-                f"Auto-downloading ALL nearby cities for '{place}': {names} "
-                f"(within {self.nearby_radius_km}km radius)"
-            )
+            logger.info(f"Multi-city routing for '{place}': downloading {names}")
 
         return cities_to_download
 
