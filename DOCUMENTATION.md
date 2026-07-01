@@ -395,6 +395,258 @@ After 5 failed attempts, wait 15 minutes. The lockout resets automatically.
 
 ## Technical Notes
 
+### Copernicus EMS — How Flood Data is Collected
+
+AFDAS uses **Copernicus Emergency Management Service (EMS) Rapid Mapping** as its primary flood data source. Here's the complete pipeline:
+
+#### What is Copernicus EMS?
+
+Copernicus EMS is a European Union satellite-based service that provides rapid mapping of natural disasters. When a flood occurs, they:
+1. Acquire satellite imagery of the affected area
+2. Produce **flood extent** and **flood depth** maps as shapefiles
+3. Publish them with activation IDs (e.g., `EMSR838`)
+
+#### The Data Pipeline (How AFDAS Gets Flood Data)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  COPERNICUS EMS                                             │
+│  https://emergency.copernicus.eu/mapping                    │
+│                                                             │
+│  Publishes: Flood extent/depth shapefiles (.shp/.zip)      │
+│  Format: GeoJSON / Shapefile with depth column              │
+│  IDs: EMSR838, EMSR900, etc.                               │
+└────────────────────────────┬────────────────────────────────┘
+                             │
+                    ┌────────▼────────┐
+                    │  DOWNLOADER      │
+                    │  flood/          │
+                    │  downloader.py   │
+                    │                  │
+                    │  1. Check if     │
+                    │     activation   │
+                    │     exists       │
+                    │  2. List products│
+                    │  3. Download ZIP │
+                    │  4. Extract .shp │
+                    └────────┬────────┘
+                             │
+                    ┌────────▼────────┐
+                    │  POLYGON LOADER  │
+                    │  flood/          │
+                    │  polygon_loader  │
+                    │                  │
+                    │  1. Read .shp    │
+                    │  2. Set CRS to   │
+                    │     WGS-84       │
+                    │  3. Detect depth │
+                    │     column       │
+                    │  4. Insert into  │
+                    │     PostGIS      │
+                    └────────┬────────┘
+                             │
+                    ┌────────▼────────┐
+                    │  DATABASE        │
+                    │  (PostGIS)       │
+                    │                  │
+                    │  flood_events    │
+                    │  flood_zones     │
+                    │  (geometry +     │
+                    │   max_depth)     │
+                    └────────┬────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              │              │              │
+     ┌────────▼───┐  ┌──────▼──────┐  ┌───▼────────┐
+     │ ROUTING    │  │ AI AGENT    │  │ FRONTEND   │
+     │            │  │             │  │            │
+     │ Marks roads│  │ check_flood │  │ GeoJSON    │
+     │ as flooded │  │ _depth()    │  │ on map     │
+     │ in graph   │  │             │  │ (blue/     │
+     │            │  │ assess_path │  │  orange/   │
+     │ Avoids in  │  │ _flood_risk │  │  red)      │
+     │ route calc │  │             │  │            │
+     └────────────┘  └─────────────┘  └────────────┘
+```
+
+#### Step-by-Step Breakdown
+
+**Step 1: Scheduler Polls Copernicus (Background Job)**
+
+File: `scheduler/copernicus_job.py`
+
+```python
+# Runs every 5 minutes (configurable: COPERNICUS_POLL_INTERVAL)
+# Checks tracked activations for updates
+active_events = await repo.get_active_events()
+for event in active_events:
+    exists = await downloader.check_activation_exists(event["activation_id"])
+```
+
+**Step 2: Download Flood Data**
+
+File: `flood/downloader.py` — `CopernicusDownloader`
+
+```python
+# Full workflow for a new activation:
+success, shapefile_path, message = await downloader.download_flood_data("EMSR838")
+
+# Internally:
+# 1. GET https://emergency.copernicus.eu/mapping/list-of-components/EMSR838
+# 2. Parse HTML for ZIP download links
+# 3. Prefer "flood_depth" product, then "flood_extent"
+# 4. Download ZIP → extract → find .shp file
+# 5. Return path to shapefile
+```
+
+**Step 3: Load into PostGIS**
+
+File: `flood/polygon_loader.py` — `FloodPolygonLoader`
+
+```python
+# Read shapefile → insert each polygon into flood_zones table
+loader = FloodPolygonLoader(session)
+count = await loader.load_from_shapefile(shapefile_path, event_id)
+
+# For each polygon:
+#   - Geometry stored as PostGIS geometry (SRID 4326)
+#   - Auto-detects depth column (depth, water_depth, max_depth, etc.)
+#   - Computes area in km²
+#   - Links to flood_event
+```
+
+**Step 4: Create Flood Event Record**
+
+File: `database/flood_repository.py`
+
+```python
+event_id = await repo.create_flood_event(
+    activation_id="EMSR838",
+    event_name="Flood EMSR838",
+    country="India",
+    region="Punjab",
+    start_date=datetime.utcnow(),
+    data_source="copernicus_ems",
+)
+```
+
+**Step 5: Flood Data Used in Routing**
+
+File: `graph/builder.py` → `api/navigation.py`
+
+When a route is calculated:
+1. `navigation.py` queries PostGIS for active flood zones
+2. Builds a GeoDataFrame from the results
+3. Passes to `GraphBuilder._annotate_flood()` 
+4. Spatial join: each road edge gets a `flood_level` based on which polygons it intersects
+5. `WeightEngine` marks edges with `flood_level > vehicle.max_flood_depth` as IMPASSABLE
+6. Routing algorithm avoids those edges
+
+**Step 6: Flood Data Used by AI Agent**
+
+The AI uses PostGIS spatial queries directly:
+- `check_flood_depth(lat, lon)` → `ST_Intersects(geometry, ST_MakePoint(lon, lat))`
+- `check_amenity_flood_status()` → finds buildings inside flood polygons
+- `assess_path_flood_risk()` → checks multiple points along a corridor
+
+#### Database Schema for Flood Data
+
+```sql
+-- Flood events (one per Copernicus activation)
+flood_events:
+  id, activation_id, event_name, country, region,
+  start_date, end_date, is_active, data_source, created_at
+
+-- Flood zone polygons (many per event)
+flood_zones:
+  id, event_id, geometry (PostGIS), max_depth, avg_depth,
+  area_km2, source_file, created_at
+
+-- Roads affected by flooding (computed by intersection engine)
+flooded_roads:
+  id, event_id, road_id, max_depth, avg_depth,
+  flooded_percentage, risk_score, created_at
+
+-- Buildings affected by flooding
+flooded_buildings:
+  id, event_id, building_id, water_depth,
+  is_accessible, evacuation_needed, created_at
+```
+
+#### How to Import Real Flood Data
+
+**Option A: Via Activation ID (automatic)**
+```python
+from scheduler.copernicus_job import CopernicusPollingJob
+job = CopernicusPollingJob()
+event_id = await job.check_new_activation("EMSR838")
+```
+
+**Option B: Manual shapefile import (via pgAdmin or script)**
+```python
+from flood.polygon_loader import FloodPolygonLoader
+from database.connection import DatabaseManager
+
+async with DatabaseManager.session() as session:
+    repo = FloodRepository(session)
+    
+    # Create event first
+    event_id = await repo.create_flood_event(
+        activation_id="MANUAL_001",
+        event_name="Delhi Floods July 2024",
+        country="India",
+        region="Delhi",
+        start_date=datetime(2024, 7, 15),
+    )
+    
+    # Load shapefile
+    loader = FloodPolygonLoader(session)
+    count = await loader.load_from_shapefile(
+        "/path/to/flood_extent.shp", event_id
+    )
+    await session.commit()
+```
+
+**Option C: Insert GeoJSON directly via SQL**
+```sql
+-- Create event
+INSERT INTO flood_events (activation_id, event_name, country, region, start_date, is_active, data_source, created_at)
+VALUES ('MANUAL_DELHI', 'Delhi Flood Test', 'India', 'Delhi', NOW(), TRUE, 'manual', NOW())
+RETURNING id;  -- e.g. returns id = 1
+
+-- Insert a flood polygon (rectangle around Connaught Place)
+INSERT INTO flood_zones (event_id, geometry, max_depth, area_km2, created_at)
+VALUES (
+  1,
+  ST_GeomFromText('POLYGON((77.20 28.62, 77.24 28.62, 77.24 28.65, 77.20 28.65, 77.20 28.62))', 4326),
+  0.8,
+  1.2,
+  NOW()
+);
+```
+
+#### Supported Flood Data Formats
+
+| Format | Extension | Supported |
+|--------|-----------|-----------|
+| ESRI Shapefile | .shp + .dbf + .shx | Yes |
+| GeoJSON | .geojson / .json | Yes |
+| GeoPackage | .gpkg | Yes |
+| KML/KMZ | .kml / .kmz | Via conversion |
+
+#### Depth Column Auto-Detection
+
+The loader automatically detects the depth column by searching for:
+- `depth`
+- `water_depth`
+- `flood_depth`
+- `max_depth`
+- `wdepth`
+
+If no depth column exists, all intersecting polygons default to **1.0m depth**.
+
+---
+
 ### Data Sources
 
 | Data | Source | Update Frequency |
