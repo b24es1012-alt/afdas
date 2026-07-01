@@ -139,25 +139,26 @@ app = FastAPI(
 
 
 # ============================================================================
-# MIDDLEWARE (order matters — last added = first executed)
+# MIDDLEWARE (order matters — last added = first executed in Starlette)
+# So we add CORS LAST to ensure it runs FIRST
 # ============================================================================
 
-# 1. CORS
+# 1. Security headers (runs second)
+app.add_middleware(SecurityHeadersMiddleware)
+
+# 2. CORS — added LAST so it runs FIRST (handles OPTIONS preflight before anything else)
 _cors_origins = get_cors_origins()
 _allow_all = "*" in _cors_origins
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_credentials=not _allow_all,  # credentials not allowed with wildcard origin
+    allow_credentials=not _allow_all,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["*"],  # Allow all headers for preflight
+    allow_headers=["*"],
     expose_headers=["X-Process-Time", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
     max_age=600,
 )
-
-# 2. Security headers
-app.add_middleware(SecurityHeadersMiddleware)
 
 
 # 3. Rate limiting middleware
