@@ -78,6 +78,7 @@ async def _detect_place_from_coordinates(
     - If they're in the same city → return that city
     - If different cities → return the larger/primary city (the multi-city
       loader will handle downloading additional cities via border detection)
+    - ALWAYS normalizes to Title Case for consistent caching
     
     Returns an OSM-compatible place string like "Dehradun, India" or "New Delhi, India"
     """
@@ -88,9 +89,15 @@ async def _detect_place_from_coordinates(
 
     logger.info(f"[place_detect] Origin: {origin_city}, {origin_state} | Dest: {dest_city}, {dest_state}")
 
+    # Normalize to title case for consistent caching
+    origin_city = origin_city.strip().title() if origin_city else ""
+    dest_city = dest_city.strip().title() if dest_city else ""
+    origin_country = origin_country.strip().title() if origin_country else "India"
+    dest_country = dest_country.strip().title() if dest_country else "India"
+
     # Build place strings
-    origin_place = f"{origin_city}, {origin_country}" if origin_city and origin_country else None
-    dest_place = f"{dest_city}, {dest_country}" if dest_city and dest_country else None
+    origin_place = f"{origin_city}, {origin_country}" if origin_city else None
+    dest_place = f"{dest_city}, {dest_country}" if dest_city else None
 
     # If same city, just use it
     if origin_city and dest_city and origin_city.lower() == dest_city.lower():

@@ -63,6 +63,10 @@ class GraphLoader:
         """
         vehicle = get_vehicle_profile(vehicle_type)
 
+        # Normalize place name to Title Case for consistent caching
+        # "rishikesh, india" and "Rishikesh, India" → same cache key
+        place = ", ".join(p.strip().title() for p in place.split(",")) if place else "New Delhi, India"
+
         # ── Step 0: Check for cross-boundary routing ─────────────────────
         if start_lat and start_lon and end_lat and end_lon:
             cross_boundary_result = await self._try_cross_boundary(
