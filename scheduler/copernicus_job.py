@@ -153,7 +153,7 @@ class CopernicusPollingJob:
         try:
             # Fetch the activations list page
             import httpx
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
                 response = await client.get(
                     "https://emergency.copernicus.eu/mapping/list-of-activations-rapid",
                     headers={"User-Agent": "AFDAS/1.0"},
