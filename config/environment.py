@@ -45,10 +45,16 @@ CORS_ORIGINS = {
 
 def get_cors_origins() -> list:
     env = get_environment()
-    # In production, NEVER allow wildcard origins
-    origins = CORS_ORIGINS.get(env, CORS_ORIGINS[Environment.DEVELOPMENT])
-    # Also check env var for custom origins
+
+    # If CORS_ORIGINS env var is set, use it as the PRIMARY source
     custom = os.getenv("CORS_ORIGINS", "")
     if custom:
-        origins = origins + [o.strip() for o in custom.split(",") if o.strip()]
+        # Support wildcard for testing
+        if custom.strip() == "*":
+            return ["*"]
+        # Use custom origins (comma-separated)
+        return [o.strip() for o in custom.split(",") if o.strip()]
+
+    # Fallback to environment-based defaults
+    origins = CORS_ORIGINS.get(env, CORS_ORIGINS[Environment.DEVELOPMENT])
     return origins
