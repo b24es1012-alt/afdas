@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     REDIS_GRAPH_TTL: int = 86400       # 24 hours
     REDIS_WEIGHT_TTL: int = 3600       # 1 hour
     REDIS_ROUTE_TTL: int = 1800        # 30 minutes
+    REDIS_SESSION_TTL: int = 3600      # 1 hour — chat session memory expiry
 
     @property
     def REDIS_URL(self) -> str:
@@ -80,6 +81,8 @@ class Settings(BaseSettings):
     MAX_ROUTES: int = 3
     DEFAULT_VEHICLE: str = "car"
     REROUTE_CHECK_INTERVAL: int = 30  # seconds
+    NEARBY_CITY_RADIUS_KM: float = 15.0  # Radius to check for nearby cities at border areas
+    BORDER_THRESHOLD_KM: float = 5.0     # If user is within this distance of city boundary, trigger nearby city download
 
     # ── Monitoring ───────────────────────────────────────────────────────
     GPS_UPDATE_INTERVAL: int = 15  # seconds
