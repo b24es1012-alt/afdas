@@ -16,6 +16,7 @@ from flood.polygon_loader import FloodPolygonLoader
 from database.connection import DatabaseManager
 from database.flood_repository import FloodRepository
 from cache.graph_cache import GraphCache
+from cache.manager import CacheManager
 from config.settings import settings
 from utils.logger import scheduler_logger as logger
 
@@ -110,8 +111,24 @@ class CopernicusPollingJob:
             if results["cache_invalidated"]:
                 try:
                     graph_cache = GraphCache()
-                    await graph_cache.clear_all()
-                    logger.info("Graph cache cleared due to flood data changes")
+                    # Only clear merged graphs (they contain flood annotations)
+                    # Single-city base graphs without flood event ID are unaffected
+                    client = CacheManager.get_client()
+                    merged_keys = []
+                    async for key in client.scan_iter(match="afdas:graph:merged:*"):
+                        merged_keys.append(key)
+                    if merged_keys:
+                        await client.delete(*merged_keys)
+                    # Also clear base graphs tagged with specific event IDs
+                    event_keys = []
+                    async for key in client.scan_iter(match="afdas:graph:base:*"):
+                        key_str = key.decode() if isinstance(key, bytes) else key
+                        # Only delete if NOT "default" (those are non-flood graphs)
+                        if "default" not in key_str:
+                            event_keys.append(key)
+                    if event_keys:
+                        await client.delete(*event_keys)
+                    logger.info(f"Cleared {len(merged_keys) + len(event_keys)} flood-related graph caches")
                 except Exception as e:
                     logger.warning(f"Cache invalidation failed: {e}")
 

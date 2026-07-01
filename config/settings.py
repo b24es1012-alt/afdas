@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     REDIS_PORT: int = 6379
     REDIS_PASSWORD: Optional[str] = None
     REDIS_DB: int = 0
-    REDIS_GRAPH_TTL: int = 86400       # 24 hours
+    REDIS_GRAPH_TTL: int = 21600         # 6 hours — non-flooded city graphs expire after this
     REDIS_WEIGHT_TTL: int = 3600       # 1 hour
     REDIS_ROUTE_TTL: int = 1800        # 30 minutes
     REDIS_SESSION_TTL: int = 3600      # 1 hour — chat session memory expiry

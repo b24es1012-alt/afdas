@@ -65,6 +65,59 @@ class GraphCache:
             await client.delete(*keys)
             logger.info(f"Cleared {len(keys)} cached graphs")
 
+    async def clear_by_region(self, region: str) -> int:
+        """
+        Clear cached graphs that contain a specific region/place name.
+        Only deletes graphs affected by that region, leaves others intact.
+        
+        Args:
+            region: Place name or partial match (e.g. "Delhi", "Mumbai")
+            
+        Returns:
+            Number of keys deleted
+        """
+        client = CacheManager.get_client()
+        keys_to_delete = []
+
+        # Scan for keys containing the region name
+        async for key in client.scan_iter(match=f"{self.PREFIX}*"):
+            key_str = key.decode() if isinstance(key, bytes) else key
+            if region.lower() in key_str.lower():
+                keys_to_delete.append(key)
+
+        if keys_to_delete:
+            await client.delete(*keys_to_delete)
+            logger.info(f"Cleared {len(keys_to_delete)} cached graphs for region '{region}'")
+
+        return len(keys_to_delete)
+
+    async def clear_by_event(self, event_id: str) -> int:
+        """
+        Clear cached graphs associated with a specific flood event ID.
+        
+        Args:
+            event_id: Flood event ID
+            
+        Returns:
+            Number of keys deleted
+        """
+        client = CacheManager.get_client()
+        keys_to_delete = []
+
+        # Scan for keys containing the event_id
+        async for key in client.scan_iter(match=f"{self.PREFIX}*{event_id}*"):
+            keys_to_delete.append(key)
+
+        # Also clear merged graphs (they might include flood data)
+        async for key in client.scan_iter(match=f"{self.PREFIX}merged:*"):
+            keys_to_delete.append(key)
+
+        if keys_to_delete:
+            await client.delete(*keys_to_delete)
+            logger.info(f"Cleared {len(keys_to_delete)} cached graphs for event '{event_id}'")
+
+        return len(keys_to_delete)
+
     async def list_keys(self) -> list:
         """List all cached graph keys."""
         client = CacheManager.get_client()

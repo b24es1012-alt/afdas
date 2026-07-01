@@ -314,16 +314,27 @@ async def end_flood_event(
 
     # Deactivate the event
     await repo.deactivate_event(event_id, end_date=datetime.utcnow())
+
+    # Delete flood zone data for this event (cleanup)
+    deleted_zones = await repo.delete_flood_zones_for_event(event_id)
     await db.commit()
 
-    # Invalidate graph cache so routes are recalculated without flood blocks
+    # Invalidate ONLY affected region's graph cache (not all cities)
+    cache_cleared = 0
     try:
-        from cache.manager import CacheManager
         from cache.graph_cache import GraphCache
 
         graph_cache = GraphCache()
-        await graph_cache.clear_all()  # Clear all cached graphs
-        logger.info(f"Graph cache cleared after ending flood event {event_id}")
+        region = event.get("region", "")
+        event_name = event.get("event_name", "")
+
+        # Clear by region name
+        if region:
+            cache_cleared += await graph_cache.clear_by_region(region)
+        # Clear by event ID (graphs tagged with this event)
+        cache_cleared += await graph_cache.clear_by_event(str(event_id))
+
+        logger.info(f"Cleared {cache_cleared} cached graphs for region '{region}' (event {event_id})")
     except Exception as e:
         logger.warning(f"Cache invalidation failed (non-fatal): {e}")
 
@@ -340,8 +351,9 @@ async def end_flood_event(
         "activation_id": event["activation_id"],
         "ended_at": datetime.utcnow().isoformat(),
         "reason": reason,
-        "cache_cleared": True,
-        "note": "All cached graphs invalidated. Next route requests will use fresh data without this flood.",
+        "flood_zones_deleted": deleted_zones,
+        "graphs_invalidated": cache_cleared,
+        "note": "Flood data deleted. Only affected region's graphs cleared. Unrelated cities untouched.",
     }
 
 
@@ -384,11 +396,11 @@ async def reactivate_flood_event(
     )
     await db.commit()
 
-    # Clear cache so flood data is picked up again
+    # Only clear graphs for the affected region (not all cities)
     try:
         from cache.graph_cache import GraphCache
         graph_cache = GraphCache()
-        await graph_cache.clear_all()
+        await graph_cache.clear_by_event(str(event_id))
     except Exception:
         pass
 
