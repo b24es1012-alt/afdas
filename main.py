@@ -290,6 +290,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 # ============================================================================
 
 app.include_router(health_router)
+app.include_router(health_router, prefix="/api/v1")  # Also available at /api/v1/health for CORS
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(navigation_router, prefix="/api/v1")
 app.include_router(chat_router, prefix="/api/v1")
