@@ -161,7 +161,31 @@ app.add_middleware(
 )
 
 
-# 3. Rate limiting middleware
+# 3. FIRST middleware to execute — handle OPTIONS immediately with CORS headers
+# This runs before rate limiter, before size check, before everything
+@app.middleware("http")
+async def cors_preflight_handler(request: Request, call_next):
+    """
+    Handle OPTIONS preflight directly — bypass all other middleware.
+    This ensures CORS headers are ALWAYS present on preflight responses.
+    """
+    if request.method == "OPTIONS":
+        from fastapi.responses import Response
+        origin = request.headers.get("origin", "*")
+        allowed_origin = origin if (_allow_all or origin in _cors_origins) else _cors_origins[0] if _cors_origins else "*"
+        return Response(
+            status_code=200,
+            headers={
+                "Access-Control-Allow-Origin": "*" if _allow_all else allowed_origin,
+                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+                "Access-Control-Allow-Headers": request.headers.get("access-control-request-headers", "*"),
+                "Access-Control-Max-Age": "600",
+            },
+        )
+    return await call_next(request)
+
+
+# 4. Rate limiting middleware
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
     """
@@ -176,7 +200,6 @@ async def rate_limit_middleware(request: Request, call_next):
     # Browsers send these automatically before real requests — must never be blocked
     if request.method == "OPTIONS":
         return await call_next(request)
-
     client_ip = RateLimiter.get_client_ip(request)
 
     # Determine tier based on path
