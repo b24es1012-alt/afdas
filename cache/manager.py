@@ -26,12 +26,19 @@ class CacheManager:
 
         logger.info(f"Connecting to Redis at {settings.REDIS_HOST}:{settings.REDIS_PORT}")
 
+        # Detect if SSL is required (Upstash, Redis Cloud, etc.)
+        use_ssl = getattr(settings, "REDIS_SSL", False)
+        # Auto-detect from host (Upstash always needs SSL)
+        if "upstash.io" in (settings.REDIS_HOST or ""):
+            use_ssl = True
+
         cls._pool = redis.Redis(
             host=settings.REDIS_HOST,
             port=settings.REDIS_PORT,
             password=settings.REDIS_PASSWORD,
             db=settings.REDIS_DB,
             decode_responses=False,  # Binary data for pickled graphs
+            ssl=use_ssl,
             socket_connect_timeout=5,
             socket_timeout=30,
             retry_on_timeout=True,
