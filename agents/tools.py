@@ -65,6 +65,35 @@ async def _reverse_geocode_city(lat: float, lon: float) -> str:
     except Exception:
         return "Delhi", "Delhi", "India"
 
+
+async def _detect_place_from_coordinates(
+    start_lat: float, start_lon: float,
+    end_lat: float, end_lon: float,
+) -> str:
+    """
+    Auto-detect the OSM place name from route coordinates.
+    Uses the midpoint of origin/destination for reverse geocoding.
+    Falls back to origin coordinates if midpoint fails.
+
+    Returns an OSM-compatible place string like "Dehradun, India" or "New Delhi, India"
+    """
+    # Use midpoint for better coverage
+    mid_lat = (start_lat + end_lat) / 2
+    mid_lon = (start_lon + end_lon) / 2
+
+    city, state, country = await _reverse_geocode_city(mid_lat, mid_lon)
+
+    # Build place string that OSMnx can understand
+    # Try "City, Country" first (works for most cities)
+    if city and country:
+        place = f"{city}, {country}"
+    elif state and country:
+        place = f"{state}, {country}"
+    else:
+        place = "New Delhi, India"
+
+    return place
+
 @tool
 async def get_coordinates_from_location(
     location_name: str,
@@ -268,6 +297,11 @@ async def calculate_route(
         graph_loader = GraphLoader(graph_cache=graph_cache)
         service = RoutingService(graph_loader=graph_loader)
 
+        # Auto-detect the city/place from coordinates using reverse geocoding
+        # This prevents downloading Delhi maps when user is in Uttarakhand, etc.
+        place = await _detect_place_from_coordinates(start_lat, start_lon, end_lat, end_lon)
+        logger.info(f"[calculate_route] Auto-detected place: '{place}' from coordinates ({start_lat}, {start_lon})")
+
         routes = await service.find_routes(
             start_lat=start_lat,
             start_lon=start_lon,
@@ -275,6 +309,7 @@ async def calculate_route(
             end_lon=end_lon,
             vehicle_type=vehicle_type,
             k=k,
+            place=place,
         )
 
         if not routes:
