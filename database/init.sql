@@ -2,7 +2,7 @@
 -- AFDAS Database Schema — PostgreSQL + PostGIS
 -- AI Flood Disaster Assistance System
 -- ═══════════════════════════════════════════════════════════════════════════
-
+--hello--
 -- Enable PostGIS extension
 CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE EXTENSION IF NOT EXISTS postgis_topology;
