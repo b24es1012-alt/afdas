@@ -35,6 +35,15 @@ class DatabaseManager:
 
         logger.info(f"Connecting to PostgreSQL at {settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}")
 
+        # Supabase and cloud PostgreSQL require SSL
+        connect_args = {}
+        if "supabase" in (settings.DB_HOST or "") or settings.DB_HOST != "localhost":
+            import ssl
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            connect_args = {"ssl": ssl_context}
+
         cls._engine = create_async_engine(
             settings.DATABASE_URL,
             pool_size=settings.DB_POOL_MIN,
@@ -42,6 +51,7 @@ class DatabaseManager:
             pool_pre_ping=True,
             pool_recycle=3600,
             echo=settings.DEBUG,
+            connect_args=connect_args,
         )
 
         cls._session_factory = async_sessionmaker(
