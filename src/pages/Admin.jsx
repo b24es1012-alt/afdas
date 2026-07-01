@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { Shield, Database, Server, Cpu, RefreshCw, Users, CloudRain, Trash2, Play, Square, Download, AlertTriangle } from 'lucide-react';
 import api from '../config/axios';
 
-const API_URL = 'http://localhost:8000/api/v1';
+// Use empty string — axios already has baseURL configured, so relative paths work
+// e.g. api.get('/flood/active') → hits baseURL + '/flood/active'
 
 export default function Admin() {
   const [activeTab, setActiveTab] = useState('floods');
@@ -92,18 +93,26 @@ function FloodManagement() {
   const loadEvents = async () => {
     setLoading(true);
     try {
-      const res = await api.get(`${API_URL}/flood/active`);
-      setEvents(res.data || []);
+      // Fetch ALL events (active + ended) for admin panel
+      const res = await api.get(`/flood/events`);
+      // /flood/events returns {events: [...], count: N}
+      setEvents(res.data.events || res.data || []);
     } catch (err) {
-      console.error('Failed to load events:', err);
-      setEvents([]);
+      // Fallback: try /flood/active (returns list directly)
+      try {
+        const res2 = await api.get(`/flood/active`);
+        setEvents(res2.data || []);
+      } catch (err2) {
+        console.error('Failed to load events:', err2);
+        setEvents([]);
+      }
     } finally { setLoading(false); }
   };
 
   const endFlood = async (eventId, eventName) => {
     if (!window.confirm(`End flood event "${eventName}"?\n\nThis will:\n- Mark it as inactive\n- Clear all cached graphs\n- Routes will no longer avoid these flooded areas`)) return;
     try {
-      const res = await api.post(`${API_URL}/flood/events/${eventId}/end`, { reason: 'Admin ended via panel' });
+      const res = await api.post(`/flood/events/${eventId}/end`, { reason: 'Admin ended via panel' });
       setMessage({ type: 'success', text: res.data.message });
       loadEvents();
     } catch (err) {
@@ -114,7 +123,7 @@ function FloodManagement() {
   const reactivateFlood = async (eventId, eventName) => {
     if (!window.confirm(`Reactivate flood "${eventName}"?\n\nRoutes will start avoiding flooded roads again.`)) return;
     try {
-      const res = await api.post(`${API_URL}/flood/events/${eventId}/reactivate`);
+      const res = await api.post(`/flood/events/${eventId}/reactivate`);
       setMessage({ type: 'success', text: res.data.message });
       loadEvents();
     } catch (err) {
@@ -128,7 +137,7 @@ function FloodManagement() {
     setImporting(true);
     setMessage(null);
     try {
-      const res = await api.post(`${API_URL}/flood/download`, importForm);
+      const res = await api.post(`/flood/download`, importForm);
       setMessage({ type: 'success', text: `Imported: ${res.data.message || res.data.status}. Event ID: ${res.data.event_id}` });
       setImportForm({ activation_id: '', event_name: '', country: 'India', region: '' });
       loadEvents();
@@ -271,7 +280,7 @@ function UserManagement() {
   const loadUsers = async () => {
     setLoading(true);
     try {
-      const res = await api.get(`${API_URL}/auth/users`);
+      const res = await api.get(`/auth/users`);
       setUsers(res.data.users || []);
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to load users');
