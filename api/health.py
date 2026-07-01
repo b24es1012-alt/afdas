@@ -50,3 +50,16 @@ async def health_check():
 async def ping():
     """Simple liveness probe."""
     return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
+
+
+
+@router.delete("/cache/clear")
+async def clear_all_cache():
+    """Clear ALL cached graphs from Redis. Admin use only."""
+    try:
+        from cache.graph_cache import GraphCache
+        graph_cache = GraphCache()
+        await graph_cache.clear_all()
+        return {"status": "cleared", "message": "All graph cache deleted"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
